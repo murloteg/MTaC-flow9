@@ -1,0 +1,31 @@
+VAR r : INT;
+VAR a : INT;
+VAR b : INT;
+VAR i : INT;
+VAR d : ARRAY OF INT;
+{
+	r := 100;
+	a := 10; 
+	b := 20;
+	i := 0;
+	{
+		{
+			{
+				{
+					a := ((b * 100) - 2);
+					b := (a + (b / 10))
+				}
+				U
+				{
+					a := APP(d, b);
+					r := (i + a)
+				}
+			};
+			(a < r)?
+		}
+	}*;
+	(b < (r * 100))?;
+
+	d := UPD(d, i, b)
+}
+

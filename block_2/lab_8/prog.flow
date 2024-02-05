@@ -1,0 +1,155 @@
+import string;
+import ds/array;
+import ds/tree;
+import lingo/pegcode/driver;
+
+Exp ::= Add, Sub, Mult, Div, Neg, Var, Rational, Int;
+	Add(left: Exp, right: Exp); 
+	Sub(left: Exp, right: Exp);
+	Mult(left: Exp, right: Exp);
+	Div(left: Exp, right: Exp);
+	Neg(val: Exp);
+	Var(letter: string);
+	Rational(numerator: int, denominator: int);
+	Int(value : int);
+
+simplifyRational(number: Rational) -> Rational {
+	greatestCommonDivisor = gcd(number.numerator, number.denominator);
+	newNumerator = number.numerator / greatestCommonDivisor;
+	newDenominator = number.denominator / greatestCommonDivisor;
+	Rational(newNumerator, newDenominator);
+}
+
+differentiateExp(exp : Exp, var: string) -> Exp {
+	switch (exp) {
+		Mult(left, rigth) : Add(Mult(differentiateExp(left, var), rigth), Mult(left, differentiateExp(rigth, var)));
+		Div(left, rigth) : Div(Sub(Mult(differentiateExp(left, var), rigth), Mult(left, differentiateExp(rigth, var))), Mult(rigth, rigth));
+        Add(left, rigth) : Add(differentiateExp(left, var), differentiateExp(rigth, var));
+        Sub(left, rigth) : Sub(differentiateExp(left, var), differentiateExp(rigth, var));
+		Neg(val): Mult(Int(-1), differentiateExp(val, var));
+        Int(val) : Int(0);
+		Rational(numerator, denominator): {
+			Rational(0, 1);
+		}
+        Var(val) : {
+			if (val == var) {
+				Rational(1, 1);
+			} else {
+				Rational(0, 1);
+			}
+		};
+    }
+}
+
+simplifyDerivative(exp: Exp) {
+	switch(exp) {
+		Add(left, rigth): {
+			simplifiedLeft = simplifyDerivative(left);
+			simplifiedRigth = simplifyDerivative(rigth);
+			if (simplifiedLeft == Int(0)) {
+				simplifiedRigth;
+			} else if (simplifiedRigth == Int(0)) {
+				simplifiedLeft;
+			} else {
+				Add(simplifiedLeft, simplifiedRigth);
+			}
+		}
+		Mult(left, rigth): {
+			simplifiedLeft = simplifyDerivative(left);
+			simplifiedRigth = simplifyDerivative(rigth);
+			if (simplifiedLeft == Int(1)) {
+				simplifiedRigth;
+			} else if (simplifiedRigth == Int(1)) {
+				simplifiedLeft;
+			} else if (simplifiedLeft == Int(0) || simplifiedRigth == Int(0)){
+				Int(0);
+			} else {
+				Mult(simplifiedLeft, simplifiedRigth);
+			}
+		}
+		Sub(left, rigth): {
+			simplifiedLeft = simplifyDerivative(left);
+			simplifiedRigth = simplifyDerivative(rigth);
+			if (simplifiedLeft == simplifiedRigth) {
+				Int(0);
+			} else if (simplifiedRigth == Int(0)){
+				simplifiedLeft;
+			} else if (simplifiedLeft == Int(0)) {
+				Mult(Int(-1), simplifiedRigth);
+			} else {
+				Sub(simplifiedLeft, simplifiedRigth);
+			}
+		}
+		Div(left, rigth): {
+			simplifiedLeft = simplifyDerivative(left);
+			simplifiedRigth = simplifyDerivative(rigth);
+			if (simplifiedRigth == Int(1)) {
+				simplifiedLeft;
+			} else if (simplifiedLeft == Int(0)){
+				Int(0);
+			} else if (simplifiedLeft == simplifiedRigth){
+				Int(1);
+			} else {
+				Div(simplifiedLeft, simplifiedRigth);
+			}
+		}
+		Rational(numerator, denominator): {
+			number = Rational(numerator, denominator);
+			simplifiedRational = simplifyRational(number);
+			if (simplifiedRational.numerator == 0) {
+				Int(0);
+			} else if (simplifiedRational.numerator == simplifiedRational.denominator) {
+				Int(1);
+			} else {
+				simplifiedRational;
+			}
+		}
+		default: exp;
+	}
+}
+
+str2exp(str : string) -> Exp {
+	my_grammar = "#include grammar.lingo";
+    parsic(compilePegGrammar(my_grammar), str, defaultPegActions);
+}
+
+printRational(number: Rational) {
+	println(i2s(number.numerator) + "/" + i2s(number.denominator));
+}
+
+exp2str(exp : Exp) -> string {
+	switch (exp) {
+		Mult(left, rigth): concatStrings(["(", exp2str(left), " * ", exp2str(rigth), ")"]);
+		Div(left, rigth): concatStrings(["(", exp2str(left), " / ", exp2str(rigth), ")"]);
+		Add(left, rigth): concatStrings(["(", exp2str(left), " + ", exp2str(rigth), ")"]);
+		Sub(left, rigth): concatStrings(["(", exp2str(left), " - ", exp2str(rigth), ")"]);
+		Neg(val): concatStrings(["-", exp2str(val)]);
+		Int(val) : i2s(val);
+		Var(val) : val;
+		Rational(numerator, denominator): i2s(numerator) + "/" + i2s(denominator);
+	}
+}
+
+main() {
+    input = "(1 / (x - (1/2)))";
+	// input = "((-x * x) + (5 *  x))";
+	// input = "((-7 / 7) + (x / 0))";
+	// input = "(((x * (1/4)) * x) - 10)";
+	println("Input:\n" + input);
+	println("\n");
+
+	println("str2exp:");
+	exp = str2exp(input);
+    println(exp);
+	println("\n");
+
+	derivative = differentiateExp(exp, "x");
+	println("Differentiate exp:");
+	println(exp2str(derivative));
+	println("\n");
+
+	println("After simplify of derivative:");
+	simplifiedDerivative = simplifyDerivative(derivative);
+	println(exp2str(simplifiedDerivative));
+}
+

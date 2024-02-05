@@ -1,0 +1,26 @@
+exp = operations | value;
+
+value = int | var | rational;
+operations = add | sub | mult | div | neg;
+
+add = '(' ws exp:left ws add_sign ws exp:rigth ws ')' { Add(:left, :rigth) };
+sub = '(' ws exp:left ws minus_sign ws exp:rigth ws ')' { Sub(:left, :rigth) };
+mult = '(' ws exp:left ws mult_sign ws exp:rigth ws ')' { Mult(:left, :rigth) };
+div = '(' ws exp:left ws div_sign ws exp:rigth ws ')' { Div(:left, :rigth) };
+neg = ws minus_sign exp:left { Neg(:left) };
+
+rational = ws '(' ws int $numerator ws div_sign ws int $denominator ws ')' { Rational(s2i($numerator), s2i($denominator)) };
+
+add_sign = '+';
+minus_sign = '-';
+mult_sign = '*';
+div_sign = '/';
+
+int = digit+ $v { Int(s2i($v)) };
+digit = '0' - '9';
+
+var = letter+ $v { Var($v) };
+letter = 'a' - 'z';
+
+ws = (' ' | '\t')*;
+

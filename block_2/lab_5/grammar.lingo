@@ -1,0 +1,10 @@
+exp = sum | mult | int;
+
+sum = "(" ws exp:left ws "+" ws exp:rigth ws ")" { Sum(:left, :rigth) };
+mult = "(" ws exp:left ws "*" ws exp:rigth ws ")" { Mult(:left, :rigth) };
+
+int = digit+ $s { Int(s2i($s)) };
+digit = '0' - '9';
+
+ws = (' ' | '\t')*;
+

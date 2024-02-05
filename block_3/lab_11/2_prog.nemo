@@ -1,0 +1,21 @@
+VAR c : INT;
+VAR a : ARRAY OF INT;
+VAR b : INT;
+VAR b : ARRAY OF INT;
+VAR i : INT;
+{
+	t := (z * 1);
+	a := APP(b, 3);
+	{
+		i := (i + 1);
+		c := UPD(a, i, i);
+	}*;
+	(i < 10)?;
+	{
+		b := (a - i);
+		b := (a + i);
+		b := (a * i);
+		b := (a / i);
+	};
+}
+

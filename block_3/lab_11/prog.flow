@@ -1,0 +1,316 @@
+import lingo/pegcode/driver;
+import sys/system;
+import ds/tree;
+import ds/tuples;
+import math/math;
+import string;
+
+ProgramBody(decls : [Declaration], body : Statement);
+Declaration: (var : Var, type : SupportedTypes);
+
+SupportedTypes ::= IntType, ArrayType, UnknownType;
+IntType();
+ArrayType(type : SupportedTypes);
+UnknownType();
+
+Statement ::= Assignment, Sequence, TestUnit, Choice, Iteration;
+Assignment: (var : Var, expr : UnifiedExpr);
+Sequence: (statements : [Statement]);
+TestUnit(form : Formula);
+Choice(statements : [Statement]);
+Iteration(body : Statement, invariant : Maybe<Formula>);
+
+UnifiedExpr ::= Array, CommonExpr;
+CommonExpr ::= Add, Mult, Sub, Div, Var, Int, Neg, ApplyAction;
+Add : (leftOperand : CommonExpr, rightOperand : CommonExpr);
+Sub : (leftOperand : CommonExpr, rightOperand : CommonExpr);
+Div : (leftOperand : CommonExpr, rightOperand : CommonExpr);
+Mult : (leftOperand : CommonExpr, rightOperand : CommonExpr);
+Neg : (leftOperand : CommonExpr);
+Var : (varAsString : string);
+Int : (leftOperand : int);
+
+Array ::= UpdateAction, ApplyAction, Var;
+ApplyAction(name : Array, at : UnifiedExpr);
+UpdateAction(name : Array, at : UnifiedExpr, to : UnifiedExpr);
+
+Formula ::= LogicalNegaction, And, Or, LogicalUnit;
+LogicalNegaction : (formula : Formula);
+And : (leftOperand : Formula, rightOperand : Formula);
+Or : (leftOperand : Formula, rightOperand : Formula);
+
+LogicalUnit ::= False, True, Equal, NotEqual, GreaterEqual, Greater, LessEqual, Less;
+Equal : (leftOperand : CommonExpr, rightOperand : CommonExpr); 
+NotEqual : (leftOperand : CommonExpr, rightOperand : CommonExpr);
+GreaterEqual : (leftOperand : CommonExpr, rightOperand : CommonExpr); 
+Greater : (leftOperand : CommonExpr, rightOperand : CommonExpr);  
+LessEqual : (leftOperand : CommonExpr, rightOperand : CommonExpr); 
+Less : (leftOperand : CommonExpr, rightOperand : CommonExpr);
+False();
+True();
+
+checkDuplicateDeclarations(program : ProgramBody, errorLambda : (string) -> void) -> Tree<string, SupportedTypes> {
+	fold(program.decls, makeTree(), \acc, decl -> {
+		if (containsKeyTree(acc, decl.var.varAsString)) {
+			errorLambda("ERROR! Duplicate declaration for: \"" + decl.var.varAsString + "\"");
+		}
+		setTree(acc, decl.var.varAsString, decl.type)
+	})
+}
+
+checkTypesForNemoProgram(program : ProgramBody, errorLambda : (string) -> void) -> void {
+	checkTypesForStatement(program.body, checkDuplicateDeclarations(program, errorLambda), errorLambda);
+}
+
+checkTypesForStatement(statement : Statement, treeWithDeclarations : Tree<string, SupportedTypes>, errorLambda : (string) -> void) -> void {
+	switch (statement) {
+		Assignment(var, val):
+			switch (lookupTree(treeWithDeclarations, var.varAsString)) {
+				Some(typeOfVar): {
+					maybeApply(checkTypesForExp(val, treeWithDeclarations, errorLambda), \typeOfValue ->
+						if (typeOfValue != typeOfVar) { 
+							errorLambda("ERROR! Var \"" + var.varAsString + "\" is: <" + supportedTypes2str(typeOfVar) + 
+									"> but assignment expression is: <" + supportedTypes2str(typeOfValue) + ">"
+							);
+						}
+					)
+				}
+				None(): {
+					errorLambda("ERROR! Cannot find a declaration for var \"" + var.varAsString + "\"");
+				}
+			}
+		Sequence(statements): {
+			iter(statements, \s -> checkTypesForStatement(s, treeWithDeclarations, errorLambda));
+		}
+		Iteration(body, inv): {
+			checkTypesForStatement(body, treeWithDeclarations, errorLambda);
+		}
+		default: {
+			{}
+		}
+	}
+}
+
+checkTypesForExp(exp : UnifiedExpr, treeWithDeclarations : Tree<string, SupportedTypes>, errorLambda : (string) -> void) -> Maybe<SupportedTypes> {
+	switch (exp) {
+		Add(left, right):
+			maybeBind2(
+				\leftType, rightType -> {
+					if (leftType != IntType()) {
+						errorLambda("ERROR! For operation \"+\": left operand is: <" + supportedTypes2str(leftType) 
+						+ "> but expecting <INT>");
+						None();
+					} else {
+						if (rightType != IntType()) {
+							errorLambda("ERROR! For operation \"+\": right operand is: <" + supportedTypes2str(rightType) 
+						+ "> but expecting <INT>");
+							None();
+						} else {
+							Some(IntType());
+						}
+					}
+				}
+			)
+			(checkTypesForExp(left, treeWithDeclarations, errorLambda), checkTypesForExp(right, treeWithDeclarations, errorLambda));
+		Mult(left, right):
+			maybeBind2(
+				\leftType, rightType -> {
+					if (leftType != IntType()) {
+						errorLambda("ERROR! For operation \"*\": left operand is: <" + supportedTypes2str(leftType) 
+						+ "> but expecting <INT>");
+						None();
+					} else {
+						if (rightType != IntType()) {
+							errorLambda("ERROR! For operation \"*\": right operand is: <" + supportedTypes2str(rightType) 
+						+ "> but expecting <INT>");
+							None();
+						} else {
+							Some(IntType());
+						}
+					}
+				}
+			)
+			(checkTypesForExp(left, treeWithDeclarations, errorLambda), checkTypesForExp(right, treeWithDeclarations, errorLambda));
+		Sub(left, right):
+			maybeBind2(
+				\leftType, rightType -> {
+					if (leftType != IntType()) {
+						errorLambda("ERROR! For operation \"-\": left operand is: <" + supportedTypes2str(leftType) 
+						+ "> but expecting <INT>");
+						None();
+					} else {
+						if (rightType != IntType()) {
+							errorLambda("ERROR! For operation \"-\": right operand is: <" + supportedTypes2str(rightType) 
+						+ "> but expecting <INT>");
+							None();
+						} else {
+							Some(IntType());
+						}
+					}
+				}
+			)
+			(checkTypesForExp(left, treeWithDeclarations, errorLambda), checkTypesForExp(right, treeWithDeclarations, errorLambda));
+		Div(left, right):
+			maybeBind2(
+				\leftType, rightType -> {
+					if (leftType != IntType()) {
+						errorLambda("ERROR! For operation \"/\": left operand is: <" + supportedTypes2str(leftType) 
+						+ "> but expecting <INT>");
+						None();
+					} else {
+						if (rightType != IntType()) {
+							errorLambda("ERROR! For operation \"/\": right operand is: <" + supportedTypes2str(rightType) 
+						+ "> but expecting <INT>");
+							None();
+						} else {
+							Some(IntType());
+						}
+					}
+				}
+			)
+			(checkTypesForExp(left, treeWithDeclarations, errorLambda), checkTypesForExp(right, treeWithDeclarations, errorLambda));
+		Neg(expr):
+			maybeBind(checkTypesForExp(expr, treeWithDeclarations, errorLambda), 
+				\operandType -> {
+					if (operandType != IntType()) {
+						errorLambda("ERROR! For negaction operation: operand is: <" + supportedTypes2str(operandType) 
+						+ "> but expecting <INT>");
+						None()
+					} else {
+						Some(IntType());
+					}
+				}
+			);
+		UpdateAction(array, index, upd):
+			maybeBind(checkTypesForExp(upd, treeWithDeclarations, errorLambda), \newValueType ->
+				maybeBind2(
+					\arrayType, typeOfIndex -> {
+						switch (arrayType) {
+							ArrayType(typeOfValue): {
+								if (typeOfIndex != IntType()) {
+									errorLambda("ERROR! For UPD: index type is: <" + supportedTypes2str(typeOfIndex) + "> but expecting: <INT>");
+									None();
+								} else {
+									if (newValueType == typeOfValue) {
+										Some(ArrayType(typeOfValue));
+									} else {
+										errorLambda("ERROR! For UPD: type of new value is: <" + supportedTypes2str(typeOfIndex) + "> but expecting the same like type of array element");
+										None();
+									}
+								}
+							}
+							default: {
+								errorLambda("ERROR! For UPD: expecting that array have <ARRAY OF> type, but received: <" + supportedTypes2str(arrayType) + ">");
+								None();
+							}
+						}
+					}
+				)
+				(checkTypesForExp(array, treeWithDeclarations, errorLambda), checkTypesForExp(index, treeWithDeclarations, errorLambda))
+			);
+		ApplyAction(array, index):
+			maybeBind2(
+				\arrayType, typeOfIndex -> {
+					switch (arrayType) {
+						ArrayType(typeOfValue): {
+							if (typeOfIndex != IntType()) {
+								errorLambda("ERROR! For APP: index type is: <" + supportedTypes2str(typeOfIndex) + "> but expecting: <INT>");
+								None();
+							} else {
+								Some(typeOfValue);
+							}
+						}
+						default: {
+							errorLambda("ERROR! For APP: expecting that array have <ARRAY OF> type, but received: <" + supportedTypes2str(arrayType) + ">");
+							None();
+						}
+					}
+				}
+			)
+			(checkTypesForExp(array, treeWithDeclarations, errorLambda), checkTypesForExp(index, treeWithDeclarations, errorLambda));
+		Var(var): {
+			ret = lookupTree(treeWithDeclarations, var);
+			if (ret == None()) {
+				errorLambda("ERROR! Cannot find a declaration for var \"" + var + "\"");
+			}
+			ret
+		}
+		Int(val): {
+			Some(IntType());
+		}
+	}
+}
+
+supportedTypes2str(type : SupportedTypes) -> string {
+	switch (type) {
+		IntType(): {
+			"INT";
+		}
+		ArrayType(content): {
+			"ARRAY OF " + supportedTypes2str(content);
+		}
+		default: {
+			"UNDEFINED TYPE";
+		}
+	}
+}
+
+parseFileData(fileName : string) -> string {
+	getFileContent(fileName);
+}
+
+createNewChoice(bs : [flow]) {
+	Choice(bs)
+}
+
+createNewIteration(bs : [flow]) {
+	Iteration(Sequence(concatA(bs)), None())
+}
+
+createProgramBody(varsAndProg: [flow]) {
+	vars = elementAt(varsAndProg, 0, []);
+	body = elementAt(varsAndProg, 1, Sequence([]));
+	ProgramBody(vars, body);
+}
+
+specialPegActions = {
+	t = setTreeValues(defaultPegActions.t, [
+		Pair("createProgramBody", createProgramBody),
+		Pair("createNewIteration", createNewIteration),
+		Pair("createNewChoice", createNewChoice)]);
+	SemanticActions(t) 
+}
+
+str2nemo(source : string) {
+	myGrammar = "#include nemo_grammar.lingo";
+	parsic(compilePegGrammar(myGrammar), source, specialPegActions)
+}
+
+main() {
+	file = "1_prog.nemo";
+	// file = "2_prog.nemo";
+	println("NEMO Program: " + file);
+	println("\n");
+	
+	fileContent = parseFileData(file);
+	counterOfErrors = ref 0;
+	errorLambda = \message -> {
+		counterOfErrors := ^counterOfErrors + 1;
+		if (^counterOfErrors == 1) {
+			println("Incorrect NEMO program!");
+		}
+		println(message)
+	}
+	program = str2nemo(fileContent);
+	checkTypesForNemoProgram(program, errorLambda);
+	
+	if (^counterOfErrors == 0) {
+        println("Parsing of NEMO program result:");
+		println("\n");
+		println("Program Body:");
+		println(program);
+	}
+}
+
+// TODO: you can use parser from lab_12
+

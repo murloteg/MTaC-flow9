@@ -1,0 +1,37 @@
+program = ws declaration*:d statement:b { ProgramNemo(:d, :b)};
+declaration = "VAR" ws text:v ":" ws type:t ";" ws { Declaration(:v, :t) };
+
+type  = int_type | array_type;
+int_type   = "INT" ws { IntType() };
+array_type = "ARRAY OF" ws type:t ws { ArrayType(:t) };
+
+statement = test | sequence | choice | iteration | assignment ;
+test = "(" ws expr:e1 compare_ops$s ws expr:e2 ")" ws "?" ws { TestCondition($s, :e1, :e2) };
+sequence = ws "{" ws statement:s1 ";" ws statement:s2 sequence_unit*:ss "}" ws { createSeq(:s1, :s2, :ss) };
+sequence_unit = ";" ws statement;
+choice = ws "{" ws statement:s1 "U" ws statement:s2 choice_unit*:ss "}" ws { createChoice(:s1, :s2, :ss) };
+choice_unit = ws "U" ws statement;
+iteration = "{" statement:b ws "}" ws "*" ws { Iteration(:b) };
+assignment = text:v ":=" ws expr:e ws { Assignment(:v, :e) };
+
+expr = int_val | binary_op | unary_op | update | apply | var;
+int_val = digit+ $s ws { IntValue(s2i($s)) };
+binary_op = "(" ws expr:left (plus_sign | sub_sign | mult_sign | div_sign) $op ws expr:right ")" ws { BinaryOp($op, :left, :right) };
+
+plus_sign = "+";
+sub_sign = "-";
+mult_sign = "*";
+div_sign = "/";
+
+unary_op = "-" $s ws expr:e { UnaryOp($s, :e) };
+apply = "APP" ws "(" ws expr:a "," ws expr:i ")" ws { ApllyOperation(:a, :i) };
+update = "UPD" ws "(" ws expr:a "," ws expr:i "," ws expr:v ")" ws { UpdateOperation(:a, :i, :v) };
+
+var = text:v { Var(:v) };
+compare_ops = "!=" | "==" | "<=" | ">=" | "<" | ">" ;
+
+text = letter+ $s ws { $s };
+letter = 'a'-'z';
+digit = '0'-'9';
+ws = (' ' | '\t' | '\n')*;
+

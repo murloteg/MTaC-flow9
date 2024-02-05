@@ -1,0 +1,378 @@
+import string;
+import lingo/pegcode/driver;
+import ds/tree;
+import math/math;
+
+Exp ::= Add, Sub, Mult, Div, Rational, Int, Var, Neg;
+	Add(left : Exp, right : Exp);
+	Sub(left : Exp, right : Exp);
+	Mult(left : Exp, right : Exp);
+	Div(left : Exp, right : Exp);
+	Var(val : string);
+	Rational(numerator : int, denominator : int);
+	Int(val : int);
+	Neg(val : Exp);
+
+PolynomVarUnit(varUnit : Tree<string, int>);
+PolynomRepresentation(representation : Tree<PolynomVarUnit, int>);
+
+RationalFunction(numerator : PolynomRepresentation, denominator : PolynomRepresentation);
+
+sumOfPolynomRepresentations(firstPolynom : PolynomRepresentation, secondPolynom : PolynomRepresentation) -> PolynomRepresentation{
+    PolynomRepresentation(
+        filterTree(
+            mergeTreeCustom(firstPolynom.representation, secondPolynom.representation, \k, v1, v2 ->{
+                v1 + v2;
+            }), 
+			\k, v -> {
+				!(v == 0)
+			}
+        )
+    )
+}
+
+multOfPolynomRepresentations(firstPolynom : PolynomRepresentation, secondPolynom : PolynomRepresentation) -> PolynomRepresentation{
+    PolynomRepresentation(
+        filterTree(
+            foldTree(firstPolynom.representation, TreeEmpty(), \k1, v1, acc1 -> {
+                mergeTreeCustom(acc1,
+                    foldTree(secondPolynom.representation, TreeEmpty(), \k2, v2, acc2 -> {
+                        multPart = PolynomVarUnit(mergeTreeCustom(k1.varUnit, k2.varUnit, \kk, vv1, vv2 -> {
+							vv1 + vv2
+						}));
+                        mergeTreeCustom(acc2, makeTree1(multPart, v1 * v2), \kk, vv1, vv2 -> {vv1 + vv2});
+                    }), \kk, vv1, vv2 -> {vv1 + vv2}
+                )
+            }),
+			\k,v -> {
+				!(v == 0)
+			}
+        )
+    )
+}
+
+negPolynomRepresentation(polynom : PolynomRepresentation) -> PolynomRepresentation{
+    PolynomRepresentation(
+        foldTree(polynom.representation, TreeEmpty(), \k, v, acc -> {
+            mergeTree(acc, makeTree1(k, 0 - v));
+        })
+    )
+}
+
+sumOfRationalFunctions(firstFunction : RationalFunction, secondFunction : RationalFunction) -> RationalFunction {
+    firstNumerator = multOfPolynomRepresentations(firstFunction.numerator, secondFunction.denominator);
+    secondNumerator = multOfPolynomRepresentations(secondFunction.numerator, firstFunction.denominator);
+    commonDenominator = multOfPolynomRepresentations(firstFunction.denominator, secondFunction.denominator);
+    RationalFunction(sumOfPolynomRepresentations(firstNumerator, secondNumerator), commonDenominator);
+}
+
+negOfRationalFunctions(firstFunction : RationalFunction) -> RationalFunction {
+    RationalFunction(negPolynomRepresentation(firstFunction.numerator), firstFunction.denominator);
+}
+
+multOfRationalFunctions(firstFunction : RationalFunction, secondFunction : RationalFunction) -> RationalFunction {
+	newNumerator = multOfPolynomRepresentations(firstFunction.numerator, secondFunction.numerator);
+	newDenominator = multOfPolynomRepresentations(firstFunction.denominator, secondFunction.denominator);
+    RationalFunction(newNumerator, newDenominator);
+}
+
+divOfRationalFunctions(firstFunction: RationalFunction, secondFunction : RationalFunction) -> RationalFunction {
+    multOfRationalFunctions(firstFunction, RationalFunction(secondFunction.denominator, secondFunction.numerator));
+}
+ 
+exp2RationalFunction(exp : Exp) -> RationalFunction {
+    switch (exp) {
+        Add(left, right) : {
+            sumOfRationalFunctions(exp2RationalFunction(left), exp2RationalFunction(right));
+        }
+        Sub(left, right) : {
+            sumOfRationalFunctions(exp2RationalFunction(left), negOfRationalFunctions(exp2RationalFunction(right)));
+        }
+        Mult(left, right) : {
+            multOfRationalFunctions(exp2RationalFunction(left), exp2RationalFunction(right));
+        }
+        Div(left, right) : {
+            divOfRationalFunctions(exp2RationalFunction(left), exp2RationalFunction(right));
+        }
+        Neg(val) : {
+            negOfRationalFunctions(exp2RationalFunction(val));
+        }
+		Rational(numerator, denominator) : {
+            RationalFunction(PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), numerator)), PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), denominator)));
+        }
+        Var(val) : {
+            RationalFunction(PolynomRepresentation(makeTree1(PolynomVarUnit(makeTree1(val, 1)), 1)), PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), 1)));
+        }
+		Int(val): {
+			RationalFunction(PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), val)), PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), 1)));
+		}
+    }
+}
+
+simplifyRationalFunction(rationalFunction : RationalFunction) -> RationalFunction {
+	    commonPartFromNumerator = findCommonPolynomRepresentation(rationalFunction.numerator);
+	    commonPartForDenominator = findCommonPolynomRepresentation(rationalFunction.denominator);
+	    totalCommonPart = findCommonPartForPolynoms(commonPartFromNumerator, commonPartForDenominator);
+		simplifiedNumerator = divideForSimplifyPolynom(rationalFunction.numerator, totalCommonPart);
+		simplifiedDenominator = divideForSimplifyPolynom(rationalFunction.denominator, totalCommonPart);
+		RationalFunction(simplifiedNumerator, simplifiedDenominator);
+}
+
+findCommonPolynomRepresentation(polynom : PolynomRepresentation) -> PolynomRepresentation {
+	newKey = prepareRepresentationOfPolynom(polynom);
+	newValue = findPreparedCoefficient(polynom);
+	PolynomRepresentation(makeTree1(newKey, newValue));
+}
+
+prepareRepresentationOfPolynom(polynom : PolynomRepresentation) -> PolynomVarUnit {
+	if (polynom.representation == TreeEmpty()) {
+		PolynomVarUnit(TreeEmpty());
+	} else {
+		firstPair = (tree2pairs(polynom.representation))[0];
+		polyMultTree = foldTree(firstPair.first.varUnit, firstPair.first.varUnit, \fKey, fVal, acc -> {
+			foldTree(polynom.representation, acc, \sKey, sVal, acc1 -> {
+				foundDegree = lookupTreeDef(sKey.varUnit, fKey, 0);
+				mergeTreeCustom(acc1, makeTree1(fKey, if (foundDegree > fVal) fVal else foundDegree), \mergeKey, fMergeVal, sMergeVal -> {
+					if (fMergeVal > sMergeVal) {
+						sMergeVal
+					} else { 
+						fMergeVal
+					}
+				})
+			})
+		})
+		PolynomVarUnit(filterTree(polyMultTree, \mergeKey, mergeVal -> { 
+				!(mergeVal == 0)
+			})
+		);
+	}
+}
+
+findPreparedCoefficient(polynom : PolynomRepresentation) -> int {
+	if (polynom.representation == TreeEmpty()) {
+		1
+	} else {
+		foldTree(polynom.representation, 0, \k, v, acc -> {
+			if (acc == 0) {
+				iabs(v)
+			} else {
+				gcd(acc, iabs(v))
+			}
+		})
+	}
+}
+
+findCommonPartForPolynoms(firstPolynom : PolynomRepresentation, secondPolynom : PolynomRepresentation) -> PolynomRepresentation {
+	if (firstPolynom.representation == TreeEmpty() || secondPolynom.representation == TreeEmpty()) {
+		PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), 1));
+	} else {
+		fpFirstPair = (tree2pairs(firstPolynom.representation))[0];
+		spFirstPair = (tree2pairs(secondPolynom.representation))[0];
+		commonCoeff = gcd(fpFirstPair.second, spFirstPair.second);
+
+		varUnit = foldTree(fpFirstPair.first.varUnit, fpFirstPair.first.varUnit, \k, v, acc -> {
+			v2 = lookupTreeDef(spFirstPair.first.varUnit, k, 0);
+			mergeTreeCustom(acc, makeTree1(k, if (v2 > v) v else v2), \kk, fDegree, sDegree -> {
+				if (fDegree > sDegree) { 
+					sDegree
+				} else {
+					fDegree
+				}
+			})
+		})
+		PolynomRepresentation(
+			makeTree1(
+				PolynomVarUnit(
+					filterTree(varUnit, \k, v -> {
+						!(v == 0)
+					})
+				), commonCoeff
+			)
+		);
+	}
+}
+
+divideForSimplifyPolynom(numerator : PolynomRepresentation, denominator : PolynomRepresentation) -> PolynomRepresentation {
+    if (polynom2str(denominator) == "1") {
+        numerator;
+    } else {
+        firstPair = (tree2pairs(denominator.representation))[0];
+	    denominatorCoeff = firstPair.second;
+	    denominatorVarUnit = firstPair.first.varUnit;
+
+	    PolynomRepresentation(
+		    foldTree(numerator.representation, TreeEmpty(), \k, coeff, acc -> {
+			    mergeTreeCustom(
+				    acc,
+				    makeTree1( 
+					    PolynomVarUnit(
+						    filterTree(
+							    mergeTreeCustom(k.varUnit, denominatorVarUnit, \kk, fDegree, sDegree -> {
+									sDegree - fDegree;
+							    }), 
+								\k1, degree -> {
+									!(degree == 0)
+								}
+						    )
+					    ),
+						coeff / denominatorCoeff
+				    ), 
+					\t, fCoeff, sCoeff -> { 
+						fCoeff + sCoeff
+					}
+			    )
+		    })
+	    )
+    }
+}
+
+exp2str(exp : Exp) -> string {
+	switch (exp) {
+		Mult(left, right): concatStrings(["(", exp2str(left), " * ", exp2str(right), ")"]);
+		Div(left, right): concatStrings(["(", exp2str(left), " / ", exp2str(right), ")"]);
+		Add(left, right): concatStrings(["(", exp2str(left), " + ", exp2str(right), ")"]);
+		Sub(left, right): concatStrings(["(", exp2str(left), " - ", exp2str(right), ")"]);
+		Neg(val): concatStrings(["-", exp2str(val)]);
+		Int(val) : i2s(val);
+		Var(val) : val;
+		Rational(numerator, denominator): i2s(numerator) + "/" + i2s(denominator);
+	}
+}
+
+degree2str(var : string, degree : int) -> string {
+    if (degree == 1) {
+		var;
+    } else {
+		var + "^" + i2s(degree);
+    }
+}
+
+polynomVarUnit2str(polynom : PolynomVarUnit) -> string {
+    pairsOfPolynomVarUnit = tree2pairs(polynom.varUnit);
+    if (length(pairsOfPolynomVarUnit) == 0) {
+        "1";
+    } else {
+        foldi(pairsOfPolynomVarUnit, "", \i, acc, pair -> {
+            polynomVarUnitAsStr = acc + degree2str(pair.first, pair.second);
+            if (i == length(pairsOfPolynomVarUnit) - 1) {
+                polynomVarUnitAsStr;
+            } else {
+                polynomVarUnitAsStr + "*";
+            }
+        })
+    }
+}
+
+mult2strSimplifier(coeff : int, value : string) -> string {
+    if ((coeff == 1) && (value == "1") || coeff == 0) {
+		"";
+    } else if (coeff < 0) {
+		concatStrings(["-(", mult2strSimplifier((-1) * coeff, value), ")"]);
+	} else if ((coeff != 1) && (value == "1")) {
+        i2s(coeff);
+    } else if ((coeff == 1) && (value != "1")) {
+        value;
+    } else {
+        concatStrings([i2s(coeff), "*", value]);
+    }
+}
+
+polynom2str(polynom : PolynomRepresentation) -> string {
+    pairsOfPolynom = tree2pairs(polynom.representation);
+    if (length(pairsOfPolynom) == 0) {
+        "0";
+    } else {
+        foldi(pairsOfPolynom, "", \i, acc, pair -> {
+			polynomAsStr = acc + mult2strSimplifier(pair.second, polynomVarUnit2str(pair.first));
+			if (i == length(pairsOfPolynom) - 1 || polynomAsStr == "") {
+				polynomAsStr;
+			} else {
+				polynomAsStr + " + ";
+			}
+        });
+    }
+}
+
+divisionByZeroMessage() -> string {
+	"Division by zero!";
+}
+
+prepareOutputForRationalFunction(numerator : string, denominator : string) -> string {
+	numerator + "\n / \n" + denominator;
+}
+
+rationalFunction2str(rationalFunction : RationalFunction) -> string {
+	preparedNumerator = polynom2str(rationalFunction.numerator);
+	preparedDenominator = polynom2str(rationalFunction.denominator);
+    if (preparedNumerator == "" && preparedDenominator == "") {
+		numeratorFirstPair = (tree2pairs(rationalFunction.numerator.representation))[0];
+		denominatorFirstPair = (tree2pairs(rationalFunction.denominator.representation))[0];
+		if (i2s(denominatorFirstPair.second) == "0") {
+			divisionByZeroMessage();
+		} else if (i2s(numeratorFirstPair.second) == "0") {
+			"0";
+		} else if (i2s(numeratorFirstPair.second) == i2s(denominatorFirstPair.second)) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(i2s(numeratorFirstPair.second), i2s(denominatorFirstPair.second));
+		}
+	} else if (preparedNumerator != "" && preparedDenominator == "") {
+		denominatorFirstPair = (tree2pairs(rationalFunction.denominator.representation))[0];
+		if (i2s(denominatorFirstPair.second) == "0") {
+			divisionByZeroMessage();
+		} else if (preparedNumerator == "0") {
+			"0";
+		} else if (preparedNumerator == i2s(denominatorFirstPair.second)) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(preparedNumerator, i2s(denominatorFirstPair.second));
+		}
+	} else if (preparedNumerator == "" && preparedDenominator != "") {
+		numeratorFirstPair = (tree2pairs(rationalFunction.numerator.representation))[0];
+		if (preparedDenominator == "0") {
+			divisionByZeroMessage();
+		} else if (i2s(numeratorFirstPair.second) == "0") {
+			"0";
+		} else if (i2s(numeratorFirstPair.second) == preparedDenominator) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(i2s(numeratorFirstPair.second), preparedDenominator);
+		}
+	} else {
+		if (polynom2str(rationalFunction.denominator) == "0") {
+			divisionByZeroMessage();
+		} else if (preparedNumerator == "0") {
+			"0";
+		} else if (preparedNumerator == polynom2str(rationalFunction.denominator)) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(preparedNumerator, preparedDenominator);
+		}
+    }
+}
+
+str2exp(str : string) -> Exp {
+	my_grammar = "#include grammar.lingo";
+    parsic(compilePegGrammar(my_grammar), str, defaultPegActions);
+}
+
+main() {
+	input = "((((x*x) - (8*y)) / x) + (-y / (9*(x*x))))";
+	// input = "((((x*x) - (8*y)) / x) - (-y / (9*(x*x))))";
+    	// input = "((((x*x) - (8*y)) / x) * (-y / (9*(x*x))))";
+	// input = "((((x*x) - (8*y)) / x) / (-y / (9*(x*x))))";
+    	// input = "( ((((x*x) - (8*y)) / x) * (-y / (9*(x*x)))) + (y/x) )";
+	// input = "((x-y)*(x+y))";
+	// input = "((x+y)*(x+y))";
+
+	exp = str2exp(input);
+	println("Input:");
+	println(exp2str(exp));
+	println("\n");
+
+	rationalFunction = exp2RationalFunction(exp);
+	simplifyRationalFunction = simplifyRationalFunction(rationalFunction);
+	println("Rational function:");
+	println(rationalFunction2str(simplifyRationalFunction));
+	println("\n");
+}

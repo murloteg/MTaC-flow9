@@ -1,0 +1,10 @@
+exp = (sum | mult | int)+;
+
+sum = ws "+" ws { OpSum() };
+mult = ws "*" ws { OpMult() };
+
+int = ws digit+ $v ws { Int(s2i($v)) };
+digit = '0' - '9';
+
+ws = (' ' | '\t')*;
+

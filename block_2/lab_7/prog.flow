@@ -1,0 +1,162 @@
+import string;
+import ds/array;
+import ds/tree;
+import lingo/pegcode/driver;
+
+Exp ::= Add, Sub, Mult, Div, Neg, Var, Rational, Int;
+	Add(left: Exp, right: Exp); 
+	Sub(left: Exp, right: Exp);
+	Mult(left: Exp, right: Exp);
+	Div(left: Exp, right: Exp);
+	Neg(val: Exp);
+	Var(letter: string);
+	Rational(numerator: int, denominator: int);
+	Int(value : int);
+
+simplifyRational(number: Rational) -> Rational {
+	greatestCommonDivisor = gcd(number.numerator, number.denominator);
+	newNumerator = number.numerator / greatestCommonDivisor;
+	newDenominator = number.denominator / greatestCommonDivisor;
+	Rational(newNumerator, newDenominator);
+}
+
+findMultiplier(lcm: int, number: int) -> int {
+	if (number == 0) {
+		1;
+	} else {
+		lcm / number;
+	}
+}
+
+addNumbers(left: Rational, right: Rational) -> Rational {
+	leastCommonMultiplier = lcm(left.denominator, right.denominator);
+	leftMultiplier = findMultiplier(leastCommonMultiplier, left.denominator);
+	rightMultiplier = findMultiplier(leastCommonMultiplier, right.denominator);
+    number = Rational(left.numerator * leftMultiplier + right.numerator * rightMultiplier, leastCommonMultiplier);
+	simplifyRational(number);
+}
+
+subNumbers(left: Rational, right: Rational) -> Rational {
+	leastCommonMultiplier = lcm(left.denominator, right.denominator);
+	leftMultiplier = findMultiplier(leastCommonMultiplier, left.denominator);
+	rightMultiplier = findMultiplier(leastCommonMultiplier, right.denominator);
+    number = Rational(left.numerator * leftMultiplier - right.numerator * rightMultiplier, leastCommonMultiplier);   
+	simplifyRational(number);
+}
+
+multNumbers(left: Rational, right: Rational) -> Rational {
+    number = Rational(left.numerator * right.numerator, left.denominator * right.denominator);
+	simplifyRational(number);
+}
+
+divNumbers(left: Rational, right: Rational) -> Rational {
+	if (right.numerator == 0) {
+		println("WARNING: division by zero! The result will not be determined!");
+		// quit(-1);
+	}
+    number = Rational(left.numerator * right.denominator, left.denominator * right.numerator);
+	simplifyRational(number);
+}
+
+calcExp(exp : Exp, varDefinition: Tree<string, Rational>) -> Maybe<Rational> {
+    switch (exp : Exp) {
+        Add(left, right): {
+            leftAsRational = calcExp(left, varDefinition);
+            rigthAsRational = calcExp(right, varDefinition);
+            maybeAdd = maybeMap2(addNumbers);
+            addingResult = maybeAdd(leftAsRational, rigthAsRational);
+			println("[DEBUG] Result of adding: ");
+			println(addingResult);
+			println("\n");
+			addingResult;
+        }
+        Mult(left, right): {
+            leftAsRational = calcExp(left, varDefinition); 
+            rigthAsRational = calcExp(right, varDefinition);
+            maybeMult = maybeMap2(multNumbers);
+            multiplicationResult = maybeMult(leftAsRational, rigthAsRational);
+			println("[DEBUG] Result of multiplication: ");
+			println(multiplicationResult);
+			println("\n");
+			multiplicationResult;
+        }
+        Sub(left, right): {
+            leftAsRational = calcExp(left, varDefinition); 
+            rigthAsRational = calcExp(right, varDefinition);
+            maybeSub = maybeMap2(subNumbers);    
+            substractionResult = maybeSub(leftAsRational, rigthAsRational);
+			println("[DEBUG] Result of substraction: ");
+			println(substractionResult);
+			println("\n");
+			substractionResult;
+        }
+        Div(left, right): {
+            leftAsRational = calcExp(left, varDefinition); 
+            rigthAsRational = calcExp(right, varDefinition);
+            maybeDiv = maybeMap2(divNumbers);
+            divisionResult = maybeDiv(leftAsRational, rigthAsRational);
+			println("[DEBUG] Result of division: ");
+			println(divisionResult);
+			println("\n");
+			divisionResult;
+        }
+        Var(letter): {
+            lookupTree(varDefinition, letter);
+        }
+		Neg(value): {
+			number = calcExp(value, varDefinition);
+			if (isSome(number)) {
+				simplifiedValue = simplifyRational(either(number, Rational(0, 0)));
+				negactionResult = Rational((-1) * simplifiedValue.numerator, simplifiedValue.denominator);
+				println("[DEBUG] Result of negaction: ");
+				println(negactionResult);
+				println("\n");
+				Some(negactionResult);
+			} else {
+				None();
+			}
+		}
+        Rational(numerator, denominator): {
+			number = Rational(numerator, denominator);
+			simplifiedValue = simplifyRational(number);
+            Some(simplifiedValue);
+        }
+		Int(value): {
+			Some(Rational(value, 1));
+		}
+    }
+}
+
+str2exp(str : string) -> Exp {
+	my_grammar = "#include grammar.lingo";
+    parsic(compilePegGrammar(my_grammar), str, defaultPegActions);
+}
+
+printRational(number: Rational) {
+	println(i2s(number.numerator) + "/" + i2s(number.denominator));
+}
+
+main() {
+    input = "(1/ (x - (1/2)))";
+	// input = "(-x + (5 *  x))";
+	// input = "((-7 / 7) + (x / 0))";
+	println("Input:\n" + input);
+	println("\n");
+
+	println("str2exp:");
+	exp = str2exp(input);
+    println(exp);
+	println("\n");
+
+    varDefinition = setTree(makeTree(), "x", Rational(2, 5));
+
+	result = calcExp(exp, varDefinition);
+	println("Result:");
+	if (isSome(result)) {
+		value = either(result, Rational(0, 0));
+		printRational(value);
+	} else {
+		println("Value is not present");
+	}
+}
+

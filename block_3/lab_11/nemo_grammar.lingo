@@ -1,0 +1,44 @@
+program = ws declaration*:ds statement:st { ProgramBody(:ds, :st) };
+
+declaration = "VAR" ws var:name ws ":" ws type:type ws ";" ws { Declaration(:name, :type) };
+
+type = int_type | array_type;
+int_type = "INT" { IntType() };
+array_type = "ARRAY OF" ws type:type ws { ArrayType(:type) };
+
+statement = "{" ws statement_unit*:ops "};" ws { Statement(:ops) };
+statement_unit = test | choice | iteration | assignment | statement;
+assignment = var:var ws ":=" ws unified_exp:expr ws ";" ws { Assignment(:var, :expr) };
+iteration = "{" ws statement:st ws "}*" ws "(" ws condition:cond ")?;" ws { Iteration(:cond, :st) };
+choice = statement:st ws "U" ws { Choice(:st) };
+test = "(" ws condition:cond ws ")?" ws ";" ws { TestUnit(:cond) };
+
+unified_exp = array_exp | comm_exp | operand;
+operand = int | var;
+
+comm_exp = "(" ws unified_exp:e1 ws binary_op_sign $sign ws unified_exp:e2 ws ")" { CommonExp(:e1, $sign, :e2) };
+binary_op_sign = add_sign | sub_sign | mult_sign | div_sign;
+
+add_sign = "+";
+sub_sign = "-";
+mult_sign = "*";
+div_sign = "/";
+
+array_exp = apply | update;
+apply = "APP" ws "(" ws unified_exp:array ws "," ws unified_exp:index ws ")" { ApplyAction(:array, :index) };
+update = "UPD" ws "(" ws unified_exp:array ws "," ws unified_exp:index ws "," ws unified_exp:new_val ws ")" { UpdateAction(:array, :index, :new_val) };
+
+condition = unified_exp:e1 ws condition_sign $sign ws unified_exp:e2 { Condition(:e1, $sign, :e2) };
+condition_sign = equal_sign | not_equal_sign | less_sign | less_equal_sign | greater_sign | greater_equal_sign;
+
+equal_sign = "==";
+not_equal_sign = "!=";
+less_sign = "<";
+less_equal_sign = "<=";
+greater_sign = ">";
+greater_equal_sign = ">=";
+
+int = ('0'-'9')+ $d { Int(s2i($d)) };
+var = ('a'-'z' ('a'-'z' | '0'-'9')*) $name { Var($name) };
+ws = (' ' | '\r' | '\n' | '\t')*;
+

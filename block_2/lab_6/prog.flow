@@ -1,0 +1,86 @@
+import string;
+import ds/array;
+import lingo/pegcode/driver;
+
+Exp ::= Sum, Mult, Int;
+	Sum(left : Exp, rigth : Exp);
+	Mult(left : Exp, rigth : Exp);
+	Int(val : int);
+
+ExpRPN ::= OpSum, OpMult, Int;
+	OpSum();
+	OpMult();
+	Int(val : int);
+
+popFromStack(stack : ref [int]) -> int {
+   left = lastElement(^stack, 0);
+   stack := subrange(^stack, 0, length(^stack) - 1); 
+   left;
+}
+
+pushToStack(stack : ref[int], element : int) {
+    refArrayPush(stack, element);
+}
+
+calcExpRPN(exp : [ExpRPN]) -> int {   
+    stack = fold(exp, ref[], \tempStack, rpnElement -> {
+            switch (rpnElement) {
+                Int(val) : pushToStack(tempStack, val);
+                OpSum() : {
+                    rigth = popFromStack(tempStack);
+                    left = popFromStack(tempStack);
+                    result = left + rigth;
+                    pushToStack(tempStack, result);
+                } 
+				OpMult() : {
+                    rigth = popFromStack(tempStack);
+                    left = popFromStack(tempStack);
+                    result = left * rigth;
+                    pushToStack(tempStack, result);
+                }
+            }
+            tempStack;
+        });
+    popFromStack(stack);
+}
+
+str2exp(str : string) -> Exp {
+	grammar = "#include grammar.lingo"; 
+	parsic(compilePegGrammar(grammar), str, defaultPegActions); 
+}
+
+exp2rpnStr(exp : Exp) -> string {
+        switch (exp) {
+                Sum(left, rigth): concatStrings([exp2rpnStr(left), " ", exp2rpnStr(rigth), " +"]);
+                Mult(left, rigth): concatStrings([exp2rpnStr(left), " ", exp2rpnStr(rigth), " *"]);
+                Int(i): i2s(i);   
+        }
+}
+
+rpnStr2rpn(str : string) -> [ExpRPN] {
+	grammar = "#include rpn.lingo"; 
+	parsic(compilePegGrammar(grammar), str, defaultPegActions); 
+}
+
+main() {
+    str = "(  (1 + (2 * 3)) + (3 *7)  )";
+	println("str2exp:");
+	exp = str2exp(str);
+    println(exp);
+	println("\n");
+
+	println("exp2rpnStr:");
+	rpnStr = exp2rpnStr(exp);
+	println(rpnStr);
+	println("\n");
+
+	println("rpnStr2rpn");
+	rpnExp = rpnStr2rpn(rpnStr);
+	println(rpnExp);
+	println("\n");
+
+	println("Result of calculation by rpnExp:");
+	result = calcExpRPN(rpnExp);
+    println(result);
+}
+

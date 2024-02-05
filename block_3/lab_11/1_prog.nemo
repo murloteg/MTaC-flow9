@@ -1,0 +1,37 @@
+VAR k : INT;
+VAR m : INT;
+VAR r : INT;
+VAR a : ARRAY OF INT;
+VAR b : ARRAY OF INT;
+{
+	k := 100;
+	m := 50;
+	r := 0;
+	{
+		{
+			k := (k + 1);
+			k := (k - m);
+			m := (m / 10);
+			m := (m * (k / 10));
+		}*;
+		((k > m) OR (r == 5))?;
+		{
+			b := UPD(a, 1, m);
+			a := UPD(b, 2, k);
+			r := APP(b, 1);
+		};
+		{
+			{
+				(r != 5)?;
+				k := 100;
+				m := 50;
+			} U
+			{
+				(r > 10)?;
+				k := (k * 5);
+				m := (m * 5);
+			}
+		};
+	};
+}
+

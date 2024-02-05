@@ -1,0 +1,402 @@
+import fs/filesystem;
+import ds/set;
+import ds/tree;
+import string;
+import lingo/pegcode/driver;
+
+
+ProgramNemo(
+	decls : [Declaration],
+	body : Statement,
+);
+
+Declaration(
+	var : string,
+	type : SupportedTypes,
+);
+
+SupportedTypes ::= IntType, ArrayType;
+	IntType();
+	ArrayType(type : SupportedTypes);
+
+NmExp ::= BinaryOp, UnaryOp, UpdateOperation, ApllyOperation, Var, IntValue;
+	BinaryOp(op: string, lhs : NmExp, rhs : NmExp);
+	UnaryOp(op: string, e : NmExp);
+	UpdateOperation(arr : NmExp, ind : NmExp, val : NmExp);
+	ApllyOperation(arr : NmExp, ind : NmExp);
+	Var(name : string);
+	IntValue(val : int);
+
+Statement ::= Assignment, TestCondition, SequenceUnit, ChoiceUnit, Iteration;
+	Assignment(var : string, val : NmExp);
+	TestCondition(cond : string, lhs : NmExp, rhs : NmExp);
+	SequenceUnit(stats : [Statement]);
+	ChoiceUnit(stats : [Statement]);
+	Iteration(body : Statement);
+
+ProgramVM(
+	decls : [Declaration],
+	body : [StatementVM],
+);
+
+StatementVM ::= AssignmentVM, IfConditionVM;
+AssignmentVM(var : string, val : NmExp, goto : [int]);
+IfConditionVM(cond : string, lhs : NmExp, rhs : NmExp, pos : [int], neg : [int]);
+
+SequenceUnitVM(
+	stats : [[StatementVM]],
+	max_lab : int
+);
+
+ChoiceUnitVM(
+	stats : [[StatementVM]],
+	starts : [int],
+	ends : [int],
+	max_lab : int
+);
+
+nmType2s(t : SupportedTypes) -> string {
+    	switch (t) {
+		IntType(): "INT";
+		ArrayType(a): "ARRAY OF " + nmType2s(a);
+	}
+}
+
+checkDuplicateDeclarations(prog : ProgramNemo, onError : (string) -> void) -> Tree<string, SupportedTypes> {
+	fold(prog.decls, makeTree(), \acc, decl -> {
+		if (containsKeyTree(acc, decl.var)) {
+			onError("ERROR! Duplicate declaration for: \"" + decl.var + "\"");
+		}
+		setTree(acc, decl.var, decl.type)
+	})
+}
+
+checkTypesForNemoProgram(prog : ProgramNemo, onError : (string) -> void) -> void {
+	checkTypesForStatement(prog.body, checkDuplicateDeclarations(prog, onError), onError)
+}
+
+checkTypesForStatement(stat : Statement, typedecls : Tree<string, SupportedTypes>, onError : (string) -> void) -> void {
+	switch (stat) {
+		Assignment(var, val):
+			switch (lookupTree(typedecls, var)) {
+				Some(var_type): {
+					maybeApply(checkTypesForExp(val, typedecls, onError), \val_type ->
+						if (val_type != var_type) { 
+							onError("ERROR! Var \"" + var + "\" is: <" + nmType2s(var_type) + 
+									"> but assignment expression is: <" + nmType2s(val_type) + ">"
+							);
+						}
+					)
+				}
+				None(): onError("ERROR! Cannot find declaration for var \"" + var + "\"");
+			}
+		TestCondition(op, l, r):
+			maybeApply(checkTypesForExp(l, typedecls, onError), \l_type ->
+				maybeApply(checkTypesForExp(r, typedecls, onError), \r_type -> {
+					if (l_type != IntType()) {
+						onError("ERROR! In comparasion: \"" + op + "\" left operand is <" + nmType2s(l_type) + "> but expecting <INT>");
+					}
+					if (r_type != IntType()) {
+						onError("ERROR! In comparasion: \"" + op + "\" right operand is <" + nmType2s(r_type) + "> but expecting <INT>");
+					}
+				})
+			);
+		SequenceUnit(stats):
+			iter(stats, \s -> checkTypesForStatement(s, typedecls, onError));
+		ChoiceUnit(stats):
+			iter(stats, \s -> checkTypesForStatement(s, typedecls, onError));
+		Iteration(body):
+			checkTypesForStatement(body, typedecls, onError)
+	}
+}
+
+checkTypesForExp(expr : NmExp, typedecls : Tree<string, SupportedTypes>, onError : (string) -> void) -> Maybe<SupportedTypes> {
+	switch (expr) {
+		BinaryOp(op, l, r):
+			maybeBind2(
+				\l_type, r_type -> {
+					if (l_type != IntType()) {
+						onError("ERROR! For operation: \"" + op + "\" left operand is: <" + nmType2s(l_type) + "> but expecting <INT>");
+						None();
+					} else {
+						if (r_type != IntType()) {
+							onError("ERROR! For operation: \"" + op + "\" right operand is: <" + nmType2s(r_type) + "> but expecting <INT>");
+							None();
+						} else {
+							Some(IntType());
+						}
+					}
+				}
+			)
+			(checkTypesForExp(l, typedecls, onError), checkTypesForExp(r, typedecls, onError));
+		UnaryOp(op, e):
+			maybeBind(checkTypesForExp(e, typedecls, onError), 
+				\e_type -> {
+					if (e_type != IntType()) {
+						onError("ERROR! For unary operation: " + op + " operand is: <" + nmType2s(e_type) + "> but expecting <INT>");
+						None()
+					} else {
+						Some(IntType());
+					}
+				}
+			);
+		UpdateOperation(arr, ind, upd):
+			maybeBind(checkTypesForExp(upd, typedecls, onError), \upd_type ->
+				maybeBind2(
+					\arr_type, ind_type -> {
+						switch (arr_type) {
+							ArrayType(val_type): {
+								if (ind_type != IntType()) {
+									onError("ERROR! For UPD: index type is: <" + nmType2s(ind_type) + "> but expecting: <INT>");
+									None();
+								} else {
+									if (upd_type == val_type) {
+										Some(ArrayType(val_type));
+									} else {
+										onError("ERROR! For UPD: type of new value is: <" + nmType2s(upd_type) + "> but expecting the same like type of array element");
+										None();
+									}
+								}
+							}
+							default: {
+								onError("ERROR! For UPD: expecting that array have <ARRAY OF> type, but received: <" + nmType2s(arr_type) + ">");
+								None();
+							}
+						}
+					}
+				)
+				(checkTypesForExp(arr, typedecls, onError), checkTypesForExp(ind, typedecls, onError))
+			);
+		ApllyOperation(arr, ind):
+			maybeBind2(
+				\arr_type, ind_type -> {
+					switch (arr_type) {
+						ArrayType(val_type): {
+							if (ind_type != IntType()) {
+								onError("ERROR! For APP: index type is: <" + nmType2s(ind_type) + "> but expecting: <INT>");
+								None();
+							} else {
+								Some(val_type);
+							}
+						}
+						default: {
+							onError("ERROR! For APP: expecting that array have <ARRAY OF> type, but received: <" + nmType2s(arr_type) + ">");
+							None();
+						}
+					}
+				}
+			)
+			(checkTypesForExp(arr, typedecls, onError), checkTypesForExp(ind, typedecls, onError));
+		Var(name): {
+			ret = lookupTree(typedecls, name);
+			if (ret == None()) {
+				onError("ERROR! Cannot find declaration for var \"" + name + "\"");
+			}
+			ret
+		}
+		IntValue(val): Some(IntType());
+	}
+}
+
+convertNemoToVM(prog : ProgramNemo) -> Maybe<ProgramVM> {
+	err_count = ref 0;
+	onError = \err -> {
+		println("Error!: " + err);
+		err_count := ^err_count + 1;
+	}
+	checkTypesForNemoProgram(prog, onError);
+	if (^err_count == 0) {
+		Some(ProgramVM(prog.decls, convertStatement2StatementVM(prog.body)))
+	} else {
+		None()
+	}
+}
+
+maxVMLabel(ss : [StatementVM]) -> int {
+	max_lab = \labs -> fold(labs, -1, max);
+	max_stat = \s -> {
+		switch (s) {
+			AssignmentVM(var, val, goto):    max_lab(goto);
+			IfConditionVM(cond, left, right, pos, neg): max(max_lab(pos), max_lab(neg));
+		}
+	}
+	fold(ss, -1, \acc, s -> max(acc, max_stat(s)))
+}
+
+addVMLabel(ss : [StatementVM], n : int) -> [StatementVM] {
+	add_lab = \labs -> fold(labs, [], \acc, l -> concat(acc, [l + n]));
+	add_stat = \s -> {
+		switch (s) {
+			AssignmentVM(var, val, goto): AssignmentVM(var, val, add_lab(goto));
+			IfConditionVM(c, l, r, pos, neg):  IfConditionVM(c, l, r, add_lab(pos), add_lab(neg));
+		}
+	}
+	fold(ss, [], \acc, s -> concat(acc, [add_stat(s)]))
+}
+
+replaceVMLabel(ss : [StatementVM], n : int, m : int) -> [StatementVM] {
+	replace_lab = \labs -> fold(labs, [], \acc, l -> concat(acc, if (l == n) [m] else [l]));
+	replace_stat = \s -> {
+		switch (s) {
+			AssignmentVM(var, val, goto): AssignmentVM(var, val, replace_lab(goto));
+			IfConditionVM(c, l, r, pos, neg):  IfConditionVM(c, l, r, replace_lab(pos), replace_lab(neg));
+		}
+	}
+	fold(ss, [], \acc, s -> concat(acc, [replace_stat(s)]))
+}
+
+convertStatement2StatementVM(stat : Statement) -> [StatementVM] {
+	switch (stat) {
+		Assignment(var, val): [AssignmentVM(var, val, [1])];
+		TestCondition(c, l, r): [IfConditionVM(c, l, r, [1], [])];
+		SequenceUnit(ss): 
+			concatA(fold(ss, SequenceUnitVM([], 0), \acc, s -> {
+					vs = convertStatement2StatementVM(s);
+					size = maxVMLabel(vs);
+					SequenceUnitVM(concat(acc.stats, [addVMLabel(vs, acc.max_lab)]), acc.max_lab + size);
+				}
+			).stats);
+		ChoiceUnit(ss): {
+			choices = fold(ss, ChoiceUnitVM([], [], [], 1), \acc, s -> {
+					vs = convertStatement2StatementVM(s);
+					size = maxVMLabel(vs);
+					ChoiceUnitVM(
+						concat(acc.stats, [addVMLabel(vs, acc.max_lab)]),
+						concat(acc.starts, [acc.max_lab]),
+						concat(acc.ends, [acc.max_lab + size]),
+						acc.max_lab + size
+					);
+				}
+			);
+			concat(
+				[IfConditionVM("==", IntValue(0), IntValue(0), choices.starts, [])],
+				foldi(choices.stats, [], \i, acc, s ->
+					concat(acc, replaceVMLabel(s, choices.ends[i], choices.max_lab))
+				)
+			);
+		}
+		Iteration(b): {
+			vs = addVMLabel(convertStatement2StatementVM(b), 1);
+			size = maxVMLabel(vs);
+			concat(
+				[IfConditionVM("==", IntValue(0), IntValue(0), [1, size], [])],
+				replaceVMLabel(vs, size, 0)
+			)
+		}
+	}
+}
+
+prepareExpr(l : NmExp, cond : string, r : NmExp) -> string {
+	retL = expr2str(l);
+	retR = expr2str(r);
+
+	result = retL + " " + cond + " " + retR;
+	if (retL == retR  && cond == "==") {
+		"TRUE"; 
+	}
+	else {
+		result; 
+	}
+}
+
+statementVM2str(s : StatementVM) -> string {
+	switch (s) {
+		AssignmentVM(var, val, goto): var + " := " + expr2str(val) + " goto {" + strGlue(map(goto, i2s), " ") + "}";
+		IfConditionVM(c, l, r, pos, neg): 
+			"if (" + (prepareExpr(l, c, r))+  ") " +
+			"then {" + strGlue(map(pos, i2s), ", ") + "} " + 
+			"else {" + strGlue(map(neg, i2s), ", ") + "}";
+	}
+}
+
+programVM2str(p : ProgramVM) -> string {
+	fold(p.decls, "", \acc, decl -> acc + declaration2str(decl) + "\n") + "\n" +
+	foldi(p.body, "", \i, acc, s -> acc + i2s(i) + ": " + statementVM2str(s) + "\n") +
+	i2s(maxVMLabel(p.body)) + ":"
+}
+
+declaration2str(d : Declaration) -> string {
+	"VAR " + d.var + " : " + nmType2s(d.type) + ";"
+}
+
+expr2str(e : NmExp) -> string {	
+	switch (e) {
+		BinaryOp(op, l, r): "(" + expr2str(l) + " " + op + " " + expr2str(r) + ")";
+		UnaryOp(op, e1): op + " " + expr2str(e1);
+		UpdateOperation(a, i, v): "UPD(" + expr2str(a) + ", " + expr2str(i) + ", " + expr2str(v) + ")";
+		ApllyOperation(a, i): "APP(" + expr2str(a) + ", " + expr2str(i) + ")";
+		Var(name): name;
+		IntValue(val): i2s(val);
+	}
+}
+
+statement2str(stat : Statement) -> string {
+	indentStr = \str -> strGlue(map(strSplit(str, "\n"), \s -> "\t" + s), "\n");
+	switch (stat) {
+		Assignment(var, val): var + " := " + expr2str(val) + ";";
+		TestCondition(c, l, r): "(" + expr2str(l) + " " + c + " " + expr2str(r) + ")?;";
+		SequenceUnit(ss): "{\n" + strGlue(map(ss, \s -> indentStr(statement2str(s))), "\n") + "\n}";
+		ChoiceUnit(ss): "{\n" + strGlue(map(ss, \s -> indentStr(statement2str(s))), "U\n") + "\n}";
+		Iteration(body): statement2str(body) + "*";
+	}
+}
+
+programNemo2str(p : ProgramNemo) -> string {
+	strGlue(map(p.decls, declaration2str), "\n") + "\n" +
+	statement2str(p.body)
+}
+
+parseFileData(fileName : string) -> string {
+	getFileContent(fileName);
+}
+
+str2nemo(str : string) -> ProgramNemo {
+	my_grammar = compilePegGrammar("#include nemo.lingo");
+	parsic(my_grammar, str, 
+		SemanticActions(
+			mergeTree(defaultPegActions.t,
+			pairs2tree([
+				Pair("createSeq", \s -> SequenceUnit(concat3([s[0]], [s[1]], s[2]))),
+				Pair("createChoice", \s -> ChoiceUnit(concat3([s[0]], [s[1]], s[2]))),
+			]))
+		)
+	)
+}
+
+main() {
+	file = "1_prog.nemo";
+	// file = "errors.nemo";
+	
+	println("NEMO Program: " + file);
+	println("\n");
+	
+	fileContent = parseFileData(file);
+	program = str2nemo(fileContent);
+
+	counterOfErrors = ref 0;
+	errorLambda = \message -> {
+		counterOfErrors := ^counterOfErrors + 1;
+		if (^counterOfErrors == 1) {
+			println("Incorrect NEMO program!");
+		}
+		println(message)
+	}
+
+	println(programNemo2str(program));
+	println("\n");
+
+	checkTypesForNemoProgram(program, errorLambda);
+	if (^counterOfErrors == 0) {
+		switch (convertNemoToVM(program)) {
+			Some(programVM): {
+				strForVM = programVM2str(programVM);
+			
+				println(">>>>VM instructions:<<<<\n");
+				println(strForVM);
+				println("\n");
+			}
+			None(): { }
+		}
+	}
+}
+

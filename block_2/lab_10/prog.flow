@@ -1,0 +1,869 @@
+import string;
+import lingo/pegcode/driver;
+import ds/array;
+import math/math;
+
+Exp ::= Add, Sub, Mult, Div, Rational, Int, Var, Neg;
+	Add(left : Exp, right : Exp);
+	Sub(left : Exp, right : Exp);
+	Mult(left : Exp, right : Exp);
+	Div(left : Exp, right : Exp);
+	Var(val : string);
+	Rational(numerator : int, denominator : int);
+	Int(val : int);
+	Neg(val : Exp);
+
+PolynomVarUnit(varUnit : Tree<string, int>);
+PolynomRepresentation(representation : Tree<PolynomVarUnit, int>);
+
+RationalFunction(numerator : PolynomRepresentation, denominator : PolynomRepresentation);
+
+sumOfPolynomRepresentations(firstPolynom : PolynomRepresentation, secondPolynom : PolynomRepresentation) -> PolynomRepresentation{
+    PolynomRepresentation(
+        filterTree(
+            mergeTreeCustom(firstPolynom.representation, secondPolynom.representation, \k, v1, v2 ->{
+                v1 + v2;
+            }), 
+			\k, v -> {
+				!(v == 0)
+			}
+        )
+    )
+}
+
+multOfPolynomRepresentations(firstPolynom : PolynomRepresentation, secondPolynom : PolynomRepresentation) -> PolynomRepresentation{
+    PolynomRepresentation(
+        filterTree(
+            foldTree(firstPolynom.representation, TreeEmpty(), \k1, v1, acc1 -> {
+                mergeTreeCustom(acc1,
+                    foldTree(secondPolynom.representation, TreeEmpty(), \k2, v2, acc2 -> {
+                        multPart = PolynomVarUnit(mergeTreeCustom(k1.varUnit, k2.varUnit, \kk, vv1, vv2 -> {
+							vv1 + vv2
+						}));
+                        mergeTreeCustom(acc2, makeTree1(multPart, v1 * v2), \kk, vv1, vv2 -> {vv1 + vv2});
+                    }), \kk, vv1, vv2 -> {vv1 + vv2}
+                )
+            }),
+			\k,v -> {
+				!(v == 0)
+			}
+        )
+    )
+}
+
+negPolynomRepresentation(polynom : PolynomRepresentation) -> PolynomRepresentation{
+    PolynomRepresentation(
+        foldTree(polynom.representation, TreeEmpty(), \k, v, acc -> {
+            mergeTree(acc, makeTree1(k, 0 - v));
+        })
+    )
+}
+
+sumOfRationalFunctions(firstFunction : RationalFunction, secondFunction : RationalFunction) -> RationalFunction {
+    firstNumerator = multOfPolynomRepresentations(firstFunction.numerator, secondFunction.denominator);
+    secondNumerator = multOfPolynomRepresentations(secondFunction.numerator, firstFunction.denominator);
+    commonDenominator = multOfPolynomRepresentations(firstFunction.denominator, secondFunction.denominator);
+    RationalFunction(sumOfPolynomRepresentations(firstNumerator, secondNumerator), commonDenominator);
+}
+
+negOfRationalFunctions(firstFunction : RationalFunction) -> RationalFunction {
+    RationalFunction(negPolynomRepresentation(firstFunction.numerator), firstFunction.denominator);
+}
+
+multOfRationalFunctions(firstFunction : RationalFunction, secondFunction : RationalFunction) -> RationalFunction {
+	newNumerator = multOfPolynomRepresentations(firstFunction.numerator, secondFunction.numerator);
+	newDenominator = multOfPolynomRepresentations(firstFunction.denominator, secondFunction.denominator);
+    RationalFunction(newNumerator, newDenominator);
+}
+
+divOfRationalFunctions(firstFunction: RationalFunction, secondFunction : RationalFunction) -> RationalFunction {
+    multOfRationalFunctions(firstFunction, RationalFunction(secondFunction.denominator, secondFunction.numerator));
+}
+
+calculateExp(exp: Exp) -> Maybe<Rational> {
+    calculateValFromTree = \numerator, denominator, operator -> {
+        switch (calculateExp(numerator)) {
+            Some(left) : {
+				switch (calculateExp(denominator)) {
+                	Some(right) : operator(left, right);
+                	None() : None();
+            	};
+			}
+            None() : None();
+        }
+    }
+
+    operatorAdd = \left, right -> {
+        if (left.denominator == right.denominator) {
+            calculateExp(Rational(left.numerator + right.numerator, left.denominator));
+        } else {
+            calculateExp(Rational(left.numerator * right.denominator + right.numerator * left.denominator, left.denominator * right.denominator));
+        }
+    }
+    operatorSub = \left, right -> {
+        if (left.denominator == right.denominator) {
+            calculateExp(Rational(left.numerator - right.numerator, left.denominator));
+        } else {
+            calculateExp(Rational(left.numerator * right.denominator - right.numerator * left.denominator, left.denominator * right.denominator));
+        }
+    }
+    operatorMult = \left, right -> {
+        calculateExp(Rational(left.numerator * right.numerator, left.denominator * right.denominator));
+    }
+    operatorDiv = \left, right -> {
+        calculateExp(Rational(left.numerator * right.denominator, left.denominator * right.numerator));
+    }
+
+    switch (exp) {
+        Var(var) : {
+            None(); 
+        }
+        Rational(numerator, denominator) : {
+            Some(Rational(numerator, denominator));
+        }
+        Add(numerator, denominator) : {
+            calculateValFromTree(numerator,denominator, \left, right -> operatorAdd(left, right));
+        }
+        Sub(numerator, denominator) : {
+            calculateValFromTree(numerator,denominator, \left, right -> operatorSub(left, right));
+        }
+        Mult(numerator, denominator) : {
+            calculateValFromTree(numerator,denominator, \left, right -> operatorMult(left, right));
+        }
+        Div(numerator, denominator) : {
+            calculateValFromTree(numerator,denominator, \left, right -> operatorDiv(left, right));
+        }
+        Neg(val) : {
+			switch (calculateExp(val)) {
+				Some(value) : {
+					left = value.numerator;
+					right = value.denominator;
+					Some(Rational(-left, right));
+				}
+				None() : None();
+			}
+        }
+		Int(val): {
+			calculateExp(Rational(val, 1));
+		}
+    }
+}
+
+ExpOper ::= SumOper, MultOper, SubOper, DivOper, NegOper, VarOper, RationalOper;
+	SumOper();
+	SubOper();
+	MultOper();
+	DivOper();
+	NegOper();
+	VarOper();
+	RationalOper();
+
+convertExp2ExpOper(exp : Exp) -> ExpOper {
+	switch (exp) {
+		Add(left, rigth): {
+			SumOper();
+		}
+		Sub(left, rigth): {
+			SubOper();
+		}
+		Mult(left, rigth): {
+			MultOper();
+		}
+		Div(left, rigth): {
+			DivOper();
+		}
+		Neg(val): {
+			NegOper();
+		}
+		Int(val): {
+			RationalOper();
+		}
+		Var(val): {
+			VarOper();
+		}
+		Rational(left, rigth): {
+			RationalOper();
+		}
+	}
+}
+
+quickRationalSimplify(rational : Maybe<Rational>) -> Maybe<Rational> {
+    switch (rational) {
+        Some(val) : {
+            if (val.denominator == 0) {
+                None();
+            }
+            else if (val.numerator == 0 && val.denominator == 1) {
+                Some(Rational(0, 1));
+            }
+            else if (val.numerator == val.denominator) {
+                Some(Rational(1, 1));
+            }
+            else {
+                gcd = gcd(val.numerator, val.denominator);
+                Some(Rational(val.numerator / gcd, val.denominator / gcd));
+            }
+        }
+        None() : {
+			None();
+		}
+    }
+}
+
+wrapperOfSimplifierExp(exp: Exp) -> Exp {
+    switch (exp) {
+        Rational(numerator, denominator) : {
+			either(quickRationalSimplify(Some(exp)), Rational(0, 0))
+		};
+        Neg(val) : {
+			Neg(wrapperOfSimplifierExp(val));
+		}
+        default : {
+			exp;
+		}
+    }
+}
+
+getSizeOfExp(exp : Exp) -> int {
+	switch (exp) {
+		Add(numerator, denominator): {
+			getSizeOfExp(numerator) + getSizeOfExp(denominator) + 1;
+		}
+		Sub(numerator, denominator): {
+			getSizeOfExp(numerator) + getSizeOfExp(denominator) + 1;
+		}
+		Mult(numerator, denominator): {
+			getSizeOfExp(numerator) + getSizeOfExp(denominator) + 1;
+		}
+		Div(numerator, denominator): {
+			getSizeOfExp(numerator) + getSizeOfExp(denominator) + 1;
+		}
+		Neg(val): {
+			getSizeOfExp(val) + 1;
+		}
+		Var(val): {
+			1;
+		}
+		Rational(numerator, denominator): {
+			1;
+		}
+		Int(val): {
+			1;
+		}
+	}
+}
+
+getNumberOfVars(exp : Exp) -> int {
+	switch (exp) {	
+        Add(numerator, denominator): {
+			getNumberOfVars(numerator) + getNumberOfVars(denominator);
+		}
+		Sub(numerator, denominator): {
+			getNumberOfVars(numerator) + getNumberOfVars(denominator);
+		}
+        Mult(numerator, denominator): {
+			getNumberOfVars(numerator) + getNumberOfVars(denominator);
+		}
+        Div(numerator, denominator): {
+			getNumberOfVars(numerator) + getNumberOfVars(denominator);
+		}
+        Neg(val): {
+			getNumberOfVars(val);
+		}
+        Var(val): {
+			1;
+		}
+		Rational(numerator, denominator): {
+			0;
+		}
+		Int(val): {
+			0;
+		}
+	}
+}
+
+tryToReplaceVarsFromExpToNewDefinition(exp : Exp, origin : Exp, t : Tree<string, Exp>) -> Maybe<Tree<string, Exp>> {
+	bin_match = \firstLeft, secondLeft, firstRigth, secondRigth -> {
+		switch (tryToReplaceVarsFromExpToNewDefinition(secondLeft, firstLeft, t)) {
+			Some(t1): {
+				tryToReplaceVarsFromExpToNewDefinition(secondRigth, firstRigth, t1);
+			}
+			None(): None();
+		}
+	}
+	switch (origin) {
+		Var(val): {
+			switch (lookupTree(t, val)) {
+				Some(secondExp): {
+					if (exp == secondExp) {
+						Some(t);
+					} else {
+						None();
+					}
+				}
+				None(): {
+					Some(setTree(t, val, exp));
+				}
+			}
+		}
+		Add(firstLeft, firstRigth):
+			switch (exp) {
+				Add(secondLeft, secondRigth): bin_match(firstLeft, secondLeft, firstRigth, secondRigth);
+				default: None();
+			}
+		Sub(firstLeft, firstRigth):
+			switch (exp) {
+				Sub(secondLeft, secondRigth): bin_match(firstLeft, secondLeft, firstRigth, secondRigth);
+				default: None();
+			}
+		Mult(firstLeft, firstRigth):
+			switch (exp) {
+				Mult(secondLeft, secondRigth): bin_match(firstLeft, secondLeft, firstRigth, secondRigth);
+				default: None();
+			}
+		Div(firstLeft, firstRigth):
+			switch (exp) {
+				Div(secondLeft, secondRigth): bin_match(firstLeft, secondLeft, firstRigth, secondRigth);
+				default: None();
+			}
+		Neg(n1):
+			switch (exp) {
+				Neg(n2): tryToReplaceVarsFromExpToNewDefinition(n1, n2, t);
+				default: None();
+			}
+		Rational(firstLeft, firstRigth): {
+			switch (exp) {
+				Rational(secondLeft, secondRigth): if (firstLeft == secondLeft && firstRigth == secondRigth) Some(t) else None();
+				default: None();
+			}
+		}
+		Int(firstVal): {
+			switch (exp) {
+				Int(secondVal): {
+					if (firstVal == secondVal) {
+						Some(t);
+					} else {
+						None();
+					}
+				}
+				default: None();
+			}
+		}
+	}
+}
+
+replaceVarUsingSamenessTree(exp : Exp, subst : Tree<string, Exp>) -> Exp {
+	switch (exp) {
+		Add(numerator, denominator): Add(replaceVarUsingSamenessTree(numerator, subst), replaceVarUsingSamenessTree(denominator, subst));
+		Sub(numerator, denominator): Sub(replaceVarUsingSamenessTree(numerator, subst), replaceVarUsingSamenessTree(denominator, subst));
+		Mult(numerator, denominator): Mult(replaceVarUsingSamenessTree(numerator, subst), replaceVarUsingSamenessTree(denominator, subst));
+		Div(numerator, denominator): Div(replaceVarUsingSamenessTree(numerator, subst), replaceVarUsingSamenessTree(denominator, subst));
+		Neg(val):    Neg(replaceVarUsingSamenessTree(val, subst));
+		Var(name): lookupTreeDef(subst, name, exp);
+		Rational(val, den): exp;
+		Int(val): exp;
+	}
+}
+
+applySameness(exp : Exp, currentSameness : Sameness) -> [Exp] {
+	switch (tryToReplaceVarsFromExpToNewDefinition(exp, currentSameness.origin, makeTree())) {
+		Some(t): [replaceVarUsingSamenessTree(currentSameness.dest, t)];
+		None(): [];
+	}
+}
+
+createSetOfSamenesses(setOfSameness : [Sameness]) -> Tree<ExpOper, [(Exp) -> [Exp]]> {
+	fold(setOfSameness, makeTree(), \acc, tr -> 
+		treePushToArrayValue(acc, 
+				convertExp2ExpOper(tr.origin), \exp -> applySameness(exp, tr)
+		)
+	)
+}
+
+Sameness(origin : Exp, dest : Exp);
+
+setOfSamenesses = createSetOfSamenesses([
+	Sameness(str2exp("((x - z) + (y + z))"), str2exp("(x + y)")),
+	Sameness(str2exp("((x + z) + (y - z))"), str2exp("(x + y)")),
+	Sameness(str2exp("((x - y) * (x + y))"), str2exp("((x * x) - (y * y))")),
+	Sameness(str2exp("((x * x) - (y * y))"), str2exp("((x - y) * (x + y))")),
+	Sameness(str2exp("((x + y) * (x - y))"), str2exp("((x * x) - (y * y))")),
+	Sameness(str2exp("((x + y) * z)"), str2exp("((x * z) + (y * z))")),
+	Sameness(str2exp("((x - y) * (x - y))"), str2exp("(((x * x) + (y * y)) - (2 * (x * y)))")),
+	Sameness(str2exp("((x + y) * (x + y))"), str2exp("(((x * x) + (y * y)) + (2 * (x * y)))")),
+	Sameness(str2exp("(x - x)"), str2exp("0")),
+	Sameness(str2exp("(x + -x)"), str2exp("0")),
+	Sameness(str2exp("(-x + x)"), str2exp("0")),
+	Sameness(str2exp("(x * 0)"), str2exp("0")),
+	Sameness(str2exp("(0 * x)"), str2exp("0")),
+	Sameness(str2exp("(x / x)"), str2exp("1")),
+	Sameness(str2exp("(x * -1)"), str2exp("-x")),
+	Sameness(str2exp("(-1 * x)"), str2exp("-x")),
+	Sameness(str2exp("(0 - x)"), str2exp("-x")),
+	Sameness(str2exp("(x * 1)"), str2exp("x")),
+	Sameness(str2exp("(1 * x)"), str2exp("x")),
+	Sameness(str2exp("((x + y) - y)"), str2exp("x")),
+]);
+
+lambdaForOperatorForSimplifyCoeffs(exp : Exp) -> [Exp] {
+	switch (calculateExp(exp)) {
+		Some(v): [v];
+		None(): [];
+	}
+}
+
+setOfSameness = mergeTreeCustom( 
+	setOfSamenesses,
+	pairs2tree([
+		Pair(SumOper(), [lambdaForOperatorForSimplifyCoeffs]),
+		Pair(SubOper(), [lambdaForOperatorForSimplifyCoeffs]),
+		Pair(MultOper(), [lambdaForOperatorForSimplifyCoeffs]),
+		Pair(DivOper(), [lambdaForOperatorForSimplifyCoeffs]),
+		Pair(NegOper(), [lambdaForOperatorForSimplifyCoeffs]),
+		Pair(VarOper(), [lambdaForOperatorForSimplifyCoeffs]),
+		Pair(RationalOper(), [lambdaForOperatorForSimplifyCoeffs]),
+	]), \i, ts1, ts2 -> concat(ts1, ts2)
+);
+
+StepOfSameness(
+	length : int
+);
+
+CandidateHistory(
+	exp : Exp,
+	history : [StepOfSameness],
+);
+
+CandidateForSimplify(
+	possibleExpressionsAfterSamenesses : Set<Exp>,
+	allExpressions : Set<Exp>,
+	history : Tree<Exp, [StepOfSameness]>,
+);
+
+getStepAfterSameness(candidateHistory : CandidateHistory, newExpr : Exp) -> CandidateHistory {
+	CandidateHistory(
+		newExpr,
+		concat(candidateHistory.history, [StepOfSameness(getSizeOfExp(candidateHistory.exp) - getSizeOfExp(newExpr))])
+	)
+}
+
+addNewCandidateToSet(historyCandidate : CandidateHistory, setOfSameness : Tree<ExpOper, [(Exp) -> [Exp]]>) -> Set<CandidateHistory> {
+	switch (lookupTree(setOfSameness, convertExp2ExpOper(historyCandidate.exp))) {
+		Some(array): 
+			fold(array, makeSet1(historyCandidate), \acc, t -> 
+				fold(t(historyCandidate.exp), acc,
+					\ac, exp : Exp -> insertSet(ac, getStepAfterSameness(historyCandidate, exp))
+				)
+			);
+		None(): makeSet1(historyCandidate);
+	}
+}
+
+getAllCandidates(historyCandidate : CandidateHistory, setOfSameness : Tree<ExpOper, [(Exp) -> [Exp]]>) -> Set<CandidateHistory> {
+	hm = \x -> CandidateHistory(x, historyCandidate.history);
+    binaryLambda = \leftArg, rigthArg, maker -> {
+		foldSet(getAllCandidates(hm(leftArg), setOfSameness), makeSet(), \acc, firstLeft ->
+			foldSet(getAllCandidates(hm(rigthArg), setOfSameness), acc, \bcc, firstRigth ->
+				mergeSets(bcc, addNewCandidateToSet(maker(firstLeft, firstRigth), setOfSameness))
+			)
+		)
+    }
+    unaryLambda = \u, maker -> {
+		foldSet(getAllCandidates(hm(u), setOfSameness), makeSet(), \acc, u1 ->
+			mergeSets(acc, addNewCandidateToSet(maker(u1), setOfSameness))
+		)
+    }
+	switch (historyCandidate.exp) {
+		Add(left, rigth): binaryLambda(left, rigth, 
+			\firstLeft, firstRigth -> CandidateHistory(
+				Add(firstLeft.exp, firstRigth.exp), 
+				concat(firstLeft.history, firstRigth.history),
+			)
+		);
+		Sub(left, rigth): binaryLambda(left, rigth, 
+			\firstLeft, firstRigth -> CandidateHistory(
+				Sub(firstLeft.exp, firstRigth.exp), 
+				concat(firstLeft.history, firstRigth.history),
+			)
+		);
+		Mult(left, rigth): binaryLambda(left, rigth, 
+			\firstLeft, firstRigth -> CandidateHistory(
+				Mult(firstLeft.exp, firstRigth.exp), 
+				concat(firstLeft.history, firstRigth.history),
+			)
+		);
+		Div(left, rigth): binaryLambda(left, rigth, 
+			\firstLeft, firstRigth -> CandidateHistory(
+				Div(firstLeft.exp, firstRigth.exp), 
+				concat(firstLeft.history, firstRigth.history),
+			)
+		);
+		Neg(val): unaryLambda(val, 
+			\lVar -> CandidateHistory(Neg(lVar.exp), lVar.history)
+		);
+		default: makeSet1(historyCandidate);
+	}
+}
+
+simplifyCandidatesUsingSetOfSamenesses(initialCandidates : CandidateForSimplify, setOfSameness : Tree<ExpOper, [(Exp) -> [Exp]]>) -> CandidateForSimplify {
+	foldSet(initialCandidates.possibleExpressionsAfterSamenesses, CandidateForSimplify(makeSet(), initialCandidates.allExpressions, initialCandidates.history), \acc, exp -> {
+			historyCandidate = CandidateHistory(exp, lookupTreeDef(initialCandidates.history, exp, []));
+			currentCandidates = getAllCandidates(historyCandidate, setOfSameness); 
+			foldSet(currentCandidates, acc, \bcc, eh1 -> {
+				if (containsSet(bcc.allExpressions, eh1.exp)) bcc else 
+					CandidateForSimplify(
+						insertSet(bcc.possibleExpressionsAfterSamenesses, eh1.exp), 
+						insertSet(bcc.allExpressions, eh1.exp), 
+						setTree(bcc.history, historyCandidate.exp, eh1.history)
+					)
+				}
+			)
+		}
+	)
+}
+
+findCandidatesForSimplify(exp : Exp, setOfSameness : Tree<ExpOper, [(Exp) -> [Exp]]>) -> Set<Exp> {
+	setOfExpr = makeSet1(exp);
+	initialCandidates = CandidateForSimplify(setOfExpr, setOfExpr, makeTree1(exp, []));
+	simplifyCandidatesUsingSetOfSamenesses(initialCandidates, setOfSameness).allExpressions;
+}
+
+tryToSimplifyUsingSamenesses(exp : Exp) -> Exp {
+	candidatesForSimplify = findCandidatesForSimplify(exp, setOfSameness);
+	minForm = foldRSet(candidatesForSimplify, exp, \firstExp, secondExp ->
+		if (getSizeOfExp(secondExp) < getSizeOfExp(firstExp)) {
+			secondExp;
+		} else if (getSizeOfExp(secondExp) == getSizeOfExp(firstExp)) {
+			if (getNumberOfVars(secondExp) <= getNumberOfVars(firstExp) && exp != secondExp) {
+				secondExp;
+			} else {
+				firstExp;
+			}
+		} else {
+			firstExp;
+		}
+	)
+	maxForm = foldRSet(candidatesForSimplify, exp, \firstExp, secondExp -> 
+		if (getSizeOfExp(secondExp) > getSizeOfExp(firstExp)) {
+			secondExp;
+		} else if (getSizeOfExp(secondExp) == getSizeOfExp(firstExp)) {
+			if (getNumberOfVars(secondExp) <= getNumberOfVars(firstExp) && exp != secondExp) {
+				secondExp;
+			} else {
+				firstExp;
+			}
+		} else {
+			firstExp;
+		}
+	)
+	if (minForm == exp) {
+		maxForm;
+	} else {
+		minForm;
+	}
+}
+
+exp2RationalFunction(exp : Exp) -> RationalFunction {
+    switch (exp) {
+        Add(left, right) : {
+            sumOfRationalFunctions(exp2RationalFunction(left), exp2RationalFunction(right));
+        }
+        Sub(left, right) : {
+            sumOfRationalFunctions(exp2RationalFunction(left), negOfRationalFunctions(exp2RationalFunction(right)));
+        }
+        Mult(left, right) : {
+            multOfRationalFunctions(exp2RationalFunction(left), exp2RationalFunction(right));
+        }
+        Div(left, right) : {
+            divOfRationalFunctions(exp2RationalFunction(left), exp2RationalFunction(right));
+        }
+        Neg(val) : {
+            negOfRationalFunctions(exp2RationalFunction(val));
+        }
+		Rational(numerator, denominator) : {
+            RationalFunction(PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), numerator)), PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), denominator)));
+        }
+        Var(val) : {
+            RationalFunction(PolynomRepresentation(makeTree1(PolynomVarUnit(makeTree1(val, 1)), 1)), PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), 1)));
+        }
+		Int(val): {
+			RationalFunction(PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), val)), PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), 1)));
+		}
+    }
+}
+
+simplifyRationalFunction(rationalFunction : RationalFunction) -> RationalFunction {
+	    commonPartFromNumerator = findCommonPolynomRepresentation(rationalFunction.numerator);
+	    commonPartForDenominator = findCommonPolynomRepresentation(rationalFunction.denominator);
+	    totalCommonPart = findCommonPartForPolynoms(commonPartFromNumerator, commonPartForDenominator);
+		simplifiedNumerator = divideForSimplifyPolynom(rationalFunction.numerator, totalCommonPart);
+		simplifiedDenominator = divideForSimplifyPolynom(rationalFunction.denominator, totalCommonPart);
+		RationalFunction(simplifiedNumerator, simplifiedDenominator);
+}
+
+findCommonPolynomRepresentation(polynom : PolynomRepresentation) -> PolynomRepresentation {
+	newKey = prepareRepresentationOfPolynom(polynom);
+	newValue = findPreparedCoefficient(polynom);
+	PolynomRepresentation(makeTree1(newKey, newValue));
+}
+
+prepareRepresentationOfPolynom(polynom : PolynomRepresentation) -> PolynomVarUnit {
+	if (polynom.representation == TreeEmpty()) {
+		PolynomVarUnit(TreeEmpty());
+	} else {
+		firstPair = (tree2pairs(polynom.representation))[0];
+		polyMultTree = foldTree(firstPair.first.varUnit, firstPair.first.varUnit, \fKey, fVal, acc -> {
+			foldTree(polynom.representation, acc, \sKey, sVal, acc1 -> {
+				foundDegree = lookupTreeDef(sKey.varUnit, fKey, 0);
+				mergeTreeCustom(acc1, makeTree1(fKey, if (foundDegree > fVal) fVal else foundDegree), \mergeKey, fMergeVal, sMergeVal -> {
+					if (fMergeVal > sMergeVal) {
+						sMergeVal
+					} else { 
+						fMergeVal
+					}
+				})
+			})
+		})
+		PolynomVarUnit(filterTree(polyMultTree, \mergeKey, mergeVal -> { 
+				!(mergeVal == 0)
+			})
+		);
+	}
+}
+
+findPreparedCoefficient(polynom : PolynomRepresentation) -> int {
+	if (polynom.representation == TreeEmpty()) {
+		1
+	} else {
+		foldTree(polynom.representation, 0, \k, v, acc -> {
+			if (acc == 0) {
+				iabs(v)
+			} else {
+				gcd(acc, iabs(v))
+			}
+		})
+	}
+}
+
+findCommonPartForPolynoms(firstPolynom : PolynomRepresentation, secondPolynom : PolynomRepresentation) -> PolynomRepresentation {
+	if (firstPolynom.representation == TreeEmpty() || secondPolynom.representation == TreeEmpty()) {
+		PolynomRepresentation(makeTree1(PolynomVarUnit(TreeEmpty()), 1));
+	} else {
+		fpFirstPair = (tree2pairs(firstPolynom.representation))[0];
+		spFirstPair = (tree2pairs(secondPolynom.representation))[0];
+		commonCoeff = gcd(fpFirstPair.second, spFirstPair.second);
+
+		varUnit = foldTree(fpFirstPair.first.varUnit, fpFirstPair.first.varUnit, \k, v, acc -> {
+			v2 = lookupTreeDef(spFirstPair.first.varUnit, k, 0);
+			mergeTreeCustom(acc, makeTree1(k, if (v2 > v) v else v2), \kk, fDegree, sDegree -> {
+				if (fDegree > sDegree) { 
+					sDegree
+				} else {
+					fDegree
+				}
+			})
+		})
+		PolynomRepresentation(
+			makeTree1(
+				PolynomVarUnit(
+					filterTree(varUnit, \k, v -> {
+						!(v == 0)
+					})
+				), commonCoeff
+			)
+		);
+	}
+}
+
+divideForSimplifyPolynom(numerator : PolynomRepresentation, denominator : PolynomRepresentation) -> PolynomRepresentation {
+    if (polynom2str(denominator) == "1") {
+        numerator;
+    } else {
+        firstPair = (tree2pairs(denominator.representation))[0];
+	    denominatorCoeff = firstPair.second;
+	    denominatorVarUnit = firstPair.first.varUnit;
+
+	    PolynomRepresentation(
+		    foldTree(numerator.representation, TreeEmpty(), \k, coeff, acc -> {
+			    mergeTreeCustom(
+				    acc,
+				    makeTree1( 
+					    PolynomVarUnit(
+						    filterTree(
+							    mergeTreeCustom(k.varUnit, denominatorVarUnit, \kk, fDegree, sDegree -> {
+									sDegree - fDegree;
+							    }), 
+								\k1, degree -> {
+									!(degree == 0)
+								}
+						    )
+					    ),
+						coeff / denominatorCoeff
+				    ), 
+					\t, fCoeff, sCoeff -> { 
+						fCoeff + sCoeff
+					}
+			    )
+		    })
+	    )
+    }
+}
+
+exp2str(exp : Exp) -> string {
+	switch (exp) {
+		Mult(left, right): concatStrings(["(", exp2str(left), " * ", exp2str(right), ")"]);
+		Div(left, right): concatStrings(["(", exp2str(left), " / ", exp2str(right), ")"]);
+		Add(left, right): concatStrings(["(", exp2str(left), " + ", exp2str(right), ")"]);
+		Sub(left, right): concatStrings(["(", exp2str(left), " - ", exp2str(right), ")"]);
+		Neg(val): concatStrings(["-", exp2str(val)]);
+		Int(val) : i2s(val);
+		Var(val) : val;
+		Rational(numerator, denominator): i2s(numerator) + "/" + i2s(denominator);
+	}
+}
+
+degree2str(var : string, degree : int) -> string {
+    if (degree == 1) {
+		var;
+    } else {
+		var + "^" + i2s(degree);
+    }
+}
+
+polynomVarUnit2str(polynom : PolynomVarUnit) -> string {
+    pairsOfPolynomVarUnit = tree2pairs(polynom.varUnit);
+    if (length(pairsOfPolynomVarUnit) == 0) {
+        "1";
+    } else {
+        foldi(pairsOfPolynomVarUnit, "", \i, acc, pair -> {
+            polynomVarUnitAsStr = acc + degree2str(pair.first, pair.second);
+            if (i == length(pairsOfPolynomVarUnit) - 1) {
+                polynomVarUnitAsStr;
+            } else {
+                polynomVarUnitAsStr + "*";
+            }
+        })
+    }
+}
+
+mult2strSimplifier(coeff : int, value : string) -> string {
+    if ((coeff == 1) && (value == "1") || coeff == 0) {
+		"";
+    } else if (coeff < 0) {
+		concatStrings(["-(", mult2strSimplifier((-1) * coeff, value), ")"]);
+	} else if ((coeff != 1) && (value == "1")) {
+        i2s(coeff);
+    } else if ((coeff == 1) && (value != "1")) {
+        value;
+    } else {
+        concatStrings([i2s(coeff), "*", value]);
+    }
+}
+
+polynom2str(polynom : PolynomRepresentation) -> string {
+    pairsOfPolynom = tree2pairs(polynom.representation);
+    if (length(pairsOfPolynom) == 0) {
+        "0";
+    } else {
+        foldi(pairsOfPolynom, "", \i, acc, pair -> {
+			polynomAsStr = acc + mult2strSimplifier(pair.second, polynomVarUnit2str(pair.first));
+			if (i == length(pairsOfPolynom) - 1 || polynomAsStr == "") {
+				polynomAsStr;
+			} else {
+				polynomAsStr + " + ";
+			}
+        });
+    }
+}
+
+divisionByZeroMessage() -> string {
+	"Division by zero!";
+}
+
+prepareOutputForRationalFunction(numerator : string, denominator : string) -> string {
+	numerator + "\n / \n" + denominator;
+}
+
+rationalFunction2str(rationalFunction : RationalFunction) -> string {
+	preparedNumerator = polynom2str(rationalFunction.numerator);
+	preparedDenominator = polynom2str(rationalFunction.denominator);
+    if (preparedNumerator == "" && preparedDenominator == "") {
+		numeratorFirstPair = (tree2pairs(rationalFunction.numerator.representation))[0];
+		denominatorFirstPair = (tree2pairs(rationalFunction.denominator.representation))[0];
+		if (i2s(denominatorFirstPair.second) == "0") {
+			divisionByZeroMessage();
+		} else if (i2s(numeratorFirstPair.second) == "0") {
+			"0";
+		} else if (i2s(numeratorFirstPair.second) == i2s(denominatorFirstPair.second)) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(i2s(numeratorFirstPair.second), i2s(denominatorFirstPair.second));
+		}
+	} else if (preparedNumerator != "" && preparedDenominator == "") {
+		denominatorFirstPair = (tree2pairs(rationalFunction.denominator.representation))[0];
+		if (i2s(denominatorFirstPair.second) == "0") {
+			divisionByZeroMessage();
+		} else if (preparedNumerator == "0") {
+			"0";
+		} else if (preparedNumerator == i2s(denominatorFirstPair.second)) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(preparedNumerator, i2s(denominatorFirstPair.second));
+		}
+	} else if (preparedNumerator == "" && preparedDenominator != "") {
+		numeratorFirstPair = (tree2pairs(rationalFunction.numerator.representation))[0];
+		if (preparedDenominator == "0") {
+			divisionByZeroMessage();
+		} else if (i2s(numeratorFirstPair.second) == "0") {
+			"0";
+		} else if (i2s(numeratorFirstPair.second) == preparedDenominator) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(i2s(numeratorFirstPair.second), preparedDenominator);
+		}
+	} else {
+		if (polynom2str(rationalFunction.denominator) == "0") {
+			divisionByZeroMessage();
+		} else if (preparedNumerator == "0") {
+			"0";
+		} else if (preparedNumerator == polynom2str(rationalFunction.denominator)) {
+			"1";
+		} else {
+			prepareOutputForRationalFunction(preparedNumerator, preparedDenominator);
+		}
+    }
+}
+
+str2exp(str : string) -> Exp {
+	my_grammar = "#include grammar.lingo";
+    parsic(compilePegGrammar(my_grammar), str, defaultPegActions);
+}
+
+main() {
+	// input = "((x - y) * (x + y))";
+	// input = "((x + y) * (x - y))";
+	// input = "((x + y) * (x + y))";
+	// input = "((x * x) - (y * y))";
+
+	// input = "(((x + 9) + v) * ((x + 9) - v))";
+	// input = "(((x + 9) + v) * ((x + 9) + v))";
+	// input = "((x - (z + 9)) + (y + (z + 9)))";
+	// input = "(((5 + left) - (7*x)) + (y + (7*x)))";
+	input = "(((x * x) - (y * y)) / ((a * a) - (b * b)))";
+	
+	exp = str2exp(input);
+	println("Input:");
+	println(exp2str(exp));
+	println("\n");
+
+	simplifiedExp = wrapperOfSimplifierExp(tryToSimplifyUsingSamenesses(exp));
+	println("After simplify:");
+	println(exp2str(simplifiedExp));
+	println("\n");
+
+	rationalFunction = exp2RationalFunction(simplifiedExp);
+	simplifyRationalFunction = simplifyRationalFunction(rationalFunction);
+	println("Final result:");
+	println(rationalFunction2str(simplifyRationalFunction));
+	println("\n");
+}

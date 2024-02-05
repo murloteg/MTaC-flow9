@@ -1,0 +1,44 @@
+import string;
+import lingo/pegcode/driver;
+
+Exp ::= Sum, Mult, Int;
+	Sum(left : Exp, rigth : Exp);
+	Mult(left : Exp, rigth : Exp);
+	Int(val : int);
+
+str2exp(str : string) -> Exp {
+	my_grammar = "#include grammar.lingo"; 
+	parsic(compilePegGrammar(my_grammar), str, defaultPegActions); 
+}
+
+exp2str(exp : Exp) -> string {
+	switch (exp) {
+		Sum(left, rigth): "(" + exp2str(left) + " + " + exp2str(rigth) + ")";
+		Mult(left, rigth): "(" + exp2str(left) + " * " + exp2str(rigth) + ")";
+		Int(val): i2s(val);
+	}
+}
+
+calcExp(exp : Exp) -> int {
+	switch(exp) {
+		Sum(left, rigth): calcExp(left) + calcExp(rigth);
+		Mult(left, rigth): calcExp(left) * calcExp(rigth);
+		Int(val): val;
+	}
+}
+
+main() {
+	str = "(((2 + 8) * 2  ) +  1)";
+	exp = str2exp(str);
+	println("str2exp:");
+	println(exp);
+	println("\n");
+
+	println("exp2str:");
+	println(exp2str(exp));
+	println("\n");
+
+	println("Result:");
+	result = i2s(calcExp(exp));
+	println(result);
+}
